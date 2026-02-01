@@ -1,0 +1,35 @@
+services:
+  postgres-bingo:
+    image: postgres:17.6
+    container_name: ebingo-db
+    environment:
+      POSTGRES_DB: "${EBINGO_DB_NAME}"
+      POSTGRES_USER: "${EBINGO_DB_USER}"
+      POSTGRES_PASSWORD: "${EBINGO_DB_PASSWORD}"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data_ebingo:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ebingo-db" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:latest
+    container_name: redis_bingo
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data_ebingo:
+  redis_data:

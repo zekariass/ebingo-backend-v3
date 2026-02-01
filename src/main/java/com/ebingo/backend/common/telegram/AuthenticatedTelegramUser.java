@@ -1,0 +1,11 @@
+package com.ebingo.backend.common.telegram;
+
+
+import java.lang.annotation.*;
+
+@Target(ElementType.PARAMETER)
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+public @interface AuthenticatedTelegramUser {
+}
+

@@ -1,0 +1,76 @@
+services:
+  app:
+    image: zekariasn/ebingo-backend:stable-2025.10.11
+    #    build:
+    #      context: .
+    #      dockerfile: Dockerfile
+    container_name: ebingo-backend
+    ports:
+      - "127.0.0.1:8080:8080"
+    env_file: .env
+    environment:
+      - JAVA_OPTS=-Xms512m -Xmx2g
+      - RE
+      - RE
+      - DIS_PORT=6379
+      - EBINGO_DB_HOST=postgres-ebingo
+      - EBINGO_DB_PORT=5432
+    command: sh -c "java ${JAVA_OPTS} -jar app.jar"
+    depends_on:
+      postgres-ebingo:
+        condition: service_healthy
+      redis-ebingo:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --spider -q http://localhost:8080/actuator/health || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - internal
+
+  postgres-ebingo:
+    image: postgres:17.6
+    container_name: ebingo-db
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${EBINGO_DB_NAME}
+      POSTGRES_USER: ${EBINGO_DB_USER}
+      POSTGRES_PASSWORD: ${EBINGO_DB_PASSWORD}
+    volumes:
+      - postgres_data_ebingo:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${EBINGO_DB_USER} -d ${EBINGO_DB_NAME}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - internal
+
+  redis-ebingo:
+    image: redis:7
+    container_name: ebingo-redis
+    environment:
+      - REDIS_HOST=redis-ebingo   # the service name in docker-compose
+      - REDIS_PORT=6379
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - internal
+
+volumes:
+  postgres_data_ebingo:
+  redis_data:
+
+networks:
+  internal:
+    driver: bridge

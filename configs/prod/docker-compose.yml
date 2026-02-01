@@ -1,0 +1,87 @@
+version: '3.9'
+
+networks:
+  prod_net:
+    driver: bridge
+
+volumes:
+  postgres_data_prod:
+  redis_data_prod:
+
+services:
+  app:
+    image: zekariasn/ebingo-backend:prod-latest
+    container_name: ebingo-backend-prod
+    env_file: .env
+    environment:
+      - JAVA_OPTS=-Xms512m -Xmx2g
+      - REDIS_HOST=redis-prod
+      - REDIS_PORT=6379
+      - EBINGO_DB_HOST=postgres-prod
+      - EBINGO_DB_PORT=5432
+    depends_on:
+      postgres-prod:
+        condition: service_healthy
+      redis-prod:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --spider -q http://localhost:8080/actuator/health || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - prod_net
+
+  postgres-prod:
+    image: postgres:17.6
+    container_name: ebingo-db-prod
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${EBINGO_DB_NAME}
+      POSTGRES_USER: ${EBINGO_DB_USER}
+      POSTGRES_PASSWORD: ${EBINGO_DB_PASSWORD}
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${EBINGO_DB_USER} -d ${EBINGO_DB_NAME}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    networks:
+      - prod_net
+
+  redis-prod:
+    image: redis:7
+    container_name: ebingo-redis-prod
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data_prod:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - prod_net
+
+  nginx:
+    image: nginx:latest
+    container_name: ebingo-nginx-prod
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    restart: unless-stopped
+    networks:
+      - prod_net

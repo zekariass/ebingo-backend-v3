@@ -1,0 +1,37 @@
+
+Errors:
+
+Bonus should not transferable
+user statistics (number of deposits, number of wins)
+transaction is not saved to db
+
+
+Autoplay Flow:
+
+[Service Startup / AutoPlayService.initAutoPlay()]
+      |
+      |-- RoomRepository.findAll() → setupRoomAutoPlay(room)
+      |      |
+      |      |-- startBotsForCurrentGameIfAllowed(room)
+      |      |      |
+      |      |      |-- getOrInitializeGame(roomId)  ← 1st call (bootstrap)
+      |      |      |
+      |      |      |-- startBotsForGameIfAllowed(room, gameId)
+      |      |                 |
+      |      |                 |-- findBotsByRoom(roomId).take(toSpawn=15)
+      |      |                 |-- For each bot (15 bots):
+      |      |                        |
+      |      |                        |-- tryReserveAndJoinBot(bot)
+      |      |                        |-- subscribeAndJoin(bot) → join game
+      |      |                        |-- createMarkingSubscription(bot)
+      |
+      |-- Redis subscription listens to room channel
+             |
+             |-- "game.ended" event
+                    |
+                    |-- clean cache & active bots
+                    |-- getOrInitializeGame(roomId)  ← 2nd call (for next game)
+                    |-- startBotsForGameIfAllowed(room, gameId)
+                           |
+                           |-- findBotsByRoom(roomId).take(toSpawn=15)
+                           |-- 15 bots join in parallel

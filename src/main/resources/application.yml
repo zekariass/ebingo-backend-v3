@@ -1,0 +1,108 @@
+spring:
+  application:
+    name: ebingo-server-backend
+  r2dbc:
+    url: ${EBINGO_DB_URL}
+    username: ${EBINGO_DB_USER}
+    password: ${EBINGO_DB_PASSWORD}
+  flyway:
+    enabled: ${FLYWAY_ENABLED:false}
+    url: ${EBINGO_DB_URL}
+    user: ${EBINGO_DB_USER}
+    password: ${EBINGO_DB_PASSWORD}
+  #  security:
+  #    oauth2:
+  #      resourceserver:
+  #        jwt:
+  #          jwk-set-uri: ${SUPABASE_JWK_ENDPOINT}
+
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      # General connection timeout
+      timeout: 5s
+
+      lettuce:
+        # Graceful shutdown of Lettuce to prevent "factory destroyed" errors
+        shutdown-timeout: 100ms
+
+        pool:
+          # Connection pool tuning (important for high concurrency)
+          max-active: 64          # maximum number of connections that can be allocated
+          max-idle: 32             # number of idle connections to keep
+          min-idle: 8             # minimum number of idle connections to maintain
+          max-wait: 5s           # how long to wait for a connection from the pool before failing
+
+server:
+  port: 8080
+
+springdoc:
+  swagger-ui:
+    path: /docs
+    doc-expansion: none
+
+bingo:
+  card:
+    size: 25
+    maxCardsPerPlayer: 2
+  draw:
+    intervalSeconds: 3
+
+telegram:
+  bot:
+    token: ${TELEGRAM_BOT_TOKEN}
+
+app:
+  cors:
+    allowed-origins:
+      - http://localhost:3000
+      - http://192.168.0.20:3000
+      - https://00164d5a57b1.ngrok-free.app
+      - https://6fb904951050.ngrok-free.app
+      - https://ebingo-client-with-telegram-auth.vercel.app
+      - https://ebingo-client-v3.vercel.app
+
+addis-pay:
+  api-key: ${ADDISPAY_API_KEY}
+  base-url: ${ADDISPAY_BASE_URL}
+  webhook-hash: ${WEBHOOK_HASH}
+  redirect-url: ${ADDISPAY_REDIRECT_URL}
+  success-url: ${ADDISPAY_SUCCESS_URL}
+  error-url: ${ADDISPAY_ERROR_URL}
+  cancel-url: ${ADDISPAY_CANCEL_URL}
+
+#Number of minutes before a game is considered stale if status is PLAYING, COMPLETED, or COUNTDOWN
+game:
+  stale:
+    ttlInMinutes: 5
+  sync:
+    interval: 2000
+    concurrent: 8
+
+  draw:
+    intervalInSeconds: 4
+    iteration: 75
+
+  countdown:
+    initialInSeconds: 35
+
+
+active:
+  games:
+    registry: redis #inMemory or redis
+
+
+deposit:
+  bonusAmount:
+    rate: 0.2
+    fixed: 0
+    max:
+      isCaped: true
+      amount: 500
+  lockAmount:
+    rate: 0.5
+    fixed: 0
+    max:
+      isCaped: false
+      amount: 1000
