@@ -106,3 +106,13 @@ deposit:
     max:
       isCaped: false
       amount: 1000
+
+golden-eggs:
+  operator-id: ${GOLDEN_EGGS_OPERATOR_ID:5d050e0c-10b6-4101-ba36-7f8f9d2c4249}
+  aggregator-id: ${GOLDEN_EGGS_AGGREGATOR_ID:5d050e0c-10b6-4101-ba36-7f8f9d2c4249}
+  api-base-url: ${GOLDEN_EGGS_API_BASE_URL:https://api.golden-eggs.games}
+  signature-secret: ${GOLDEN_EGGS_SIGNATURE_SECRET:23FEF1AB00BBD8D0028C2E4D72DF1CD9AD8D59681C10D2AC3457F5E75A8E7F7662A41F2B41BA4ADDB04786DA693CDE1B2C608B13114305B538452D5C98DC009B}
+  auth-token-ttl-minutes: ${GOLDEN_EGGS_AUTH_TOKEN_TTL:30}
+  session-token-ttl-minutes: ${GOLDEN_EGGS_SESSION_TOKEN_TTL:120}
+  launch-token-ttl-minutes: ${GOLDEN_EGGS_LAUNCH_TOKEN_TTL:20}
+  init-data-max-age-seconds: ${GOLDEN_EGGS_INIT_DATA_MAX_AGE:600}

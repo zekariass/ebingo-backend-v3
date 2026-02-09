@@ -1,0 +1,290 @@
+The Provider's Workflow looks as follows:
+1. The Platform's Backend generates a token, which will be used for user authentication, and inserts it into the game's URL.
+2. The Platform's Frontend opens an iframe with the URL obtained from the Platform's Backend.
+3. The Provider's Frontend sends information received from the URL to the Provider's Backend.
+4. The Provider's Backend sends a request to the Platform's Backend for player data to check authentication and obtain additional player information (e.g., balance).
+
+5. After receiving a response from the Platform's Backend, the Provider's Backend provides the response to the Provider's Frontend.
+6. Upon a player's bet, the Provider's Backend sends a request to the Platform's Backend for fund deduction. Upon a successful response, the bet is placed.
+7. Upon game completion, the Provider's Backend sends a request to credit the winnings to the Platform's Backend (losses are sent as zero winnings, i.e., the request is sent even in case of a loss).
+
+
+Backend Integration(Aggregator)
+1. Getting a list of games
+To retrieve a list of games, you should send a GET request to the following URL:
+https://api.golden-eggs.games/api/gameModesList?operatorId=:operatorId
+:operatorId - Operator ID (Your)
+Expected response:
+[
+  {
+    "gameMode": "lucky-mines",
+    "title": "Lucky mines",
+    "description": "Lucky mines",
+    "iconsUrls": {
+      "url": "https://icons.golden-eggs.games/lucky-mines.png"
+    },
+    "multiplayer": false,
+    "rtp": "96"
+  },
+  {
+    "gameMode": "crash",
+    "title": "Crash",
+    "description": "Crash",
+    "iconsUrls": {
+      "url": "https://icons.golden-eggs.games/crash.png"
+    },
+    "multiplayer": true,
+    "rtp": "90"
+  },
+  {
+    "gameMode": "keno",
+    "title": "Sweet Keno",
+    "description": "Sweet Keno",
+    "iconsUrls": {
+      "url": "https://icons.golden-eggs.games/keno.png"
+    },
+    "multiplayer": false,
+    "rtp": "98"
+  }
+]
+
+Where:
+
+| Field       | Type    | Description                     |
+| ----------- | ------- | ------------------------------- |
+| gameMode    | String  | Game code                       |
+| title       | String  | Game name                       |
+| description | String  | Game description                |
+| iconsUrls   | Object  | Icon set                        |
+| multiplayer | Boolean | Whether the game is multiplayer |
+| rtp         | String  | Game RTP                        |
+
+2. Interaction Scheme
+2.1 Introduction
+
+All interactions with the Platform Backend are performed via POST webhooks sent from the Provider to the URL specified by the Platform.
+
+Webhook requests are triggered by the following events:
+
+Session Initialization (init)
+
+Bet – Player balance deduction (bet)
+
+Payout – Credit based on game results (withdraw)
+
+Cancellation – Refund of player funds (rollback)
+
+2.2 Request Handling
+
+The request timeout is 10 seconds.
+
+If the Platform Backend does not respond within this time frame, the request is considered incomplete, and compensatory actions will be taken (see Error Handling section).
+
+The expected HTTP status code for a successful webhook response is 200.
+
+Any HTTP status code other than 200 will be treated as an error, even if the response body contains a status field marked as OK.
+
+Idempotency
+
+Processing of withdraw and rollback webhooks must be idempotent.
+The key to idempotency is the data.transactionId field.
+This means that when receiving a withdraw or rollback webhook with a data.transactionId that has already beensuccessfully processed before, it should not be processed again, and the response to the request should contain theresponse received during the previous processing.
+
+2.2 Request Signature
+The request will have a header called X-REQUEST-SIGN, which contains the signature of the request body in itsoriginal form.
+The signature is generated using the algorithm, where the message is the request body in its originalform, and the key is the signature key provided by the Provider upon connection.
+The 'signature' header is provided for backward compatibility with the previous signaturealgorithm that was used previously
+
+Request body
+{"action":"init","token":"AuthToken","data":{"currency":"USD","operator":"OperatorId","gameMode":"GameMode"}}
+Secret key:
+7A2DB2F4FE86998735835F538826B262E834662EA297AB8B4286DBFE315A2467521D791A94E3D12A942427A29F
+
+Digest algorithm: SHA256
+X-REQUEST-SIGN: 407c4890d288f37fbd7ced0ce73857e77596dcfd4457a296d95ab99d5a97b6b7
+
+2.3 Error Handling
+If the Platform's web server cannot process the request, it should respond with an error code. The expected format is:
+{
+"code": "(Required) For example: INVALID_TOKEN",
+"message": "(Optional) Gaming message to display to the player (for debit request)"
+}
+2.4. Expected Response Codes
+| Code                            | Error Type      | Description                                                                                                                                   |
+| ------------------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| **OK**                          | Success         | Operation completed successfully.                                                                                                             |
+| **TEMPORARY_ERROR**             | Retryable Error | There is a temporary problem with the game server.                                                                                            |
+| **INVALID_TOKEN**               | Fatal Error     | There has been a problem with the casino. User authentication failed or the session may have expired. Please close the browser and try again. |
+| **ACCOUNT_LOCKED**              | Fatal Error     | There has been a problem with the casino. User authentication failed or the session may have expired. Please close the browser and try again. |
+| **ACCOUNT_INVALID**             | Fatal Error     | There has been a problem with the casino. User does not exist.                                                                                |
+| **UNKNOWN_ERROR**               | Final Error     | Please contact Customer Support for assistance.                                                                                               |
+| **GAME_DISABLED**               | Final Error     | Game is disabled on the casino side.                                                                                                          |
+| **INSUFFICIENT_FUNDS**          | Final Error     | You do not have sufficient funds to place this bet.                                                                                           |
+| **CHECKS_FAIL**                 | Final Error     | Operation not allowed because of failed checks on the casino side.                                                                            |
+| **DEBIT_TRANSACTION_NOT_FOUND** | Final Error     | Related debit transaction was not found.                                                                                                      |
+
+
+2.5 Handling Failures
+2.51 Mechanism for Compensating Failed Bet Attempts
+
+If the response to the 'bet' webhook results in a TEMPORARY_ERROR or UNKNOWN_ERROR code (or in case of
+network failures), the bet will be considered unsuccessful. The Provider's server will automatically trigger a 'rollback'
+webhook for this bet.
+
+2.52 Resend Mechanism
+
+This mechanism only operates for the withdraw and rollback webhooks.
+If the Operator's Server is inaccessible or if the error code is TEMPORARY_ERROR , the Provider's server will
+attempt to resend the withdraw and rollback webhooks gradually, increasing the interval between each resend
+attempt (up to 3 days).
+The interval increases between each attempt based on the Exponential Backoff strategy.
+Exponential Backoff Settings:
+
+{
+  "FACTOR": 2,
+  "MAX_ATTEMPTS": 50,
+  "INTERVAL_MS": 5000,
+  "MAX_INTERVAL_MS": 10800000
+}
+
+3. Request Structure
+All fiat values are rounded to 2 decimal places.
+All crypto values are rounded to 9 decimal places.
+
+3.1 Session Initialization
+
+Incoming request:
+{
+  "action": "init",
+  "token": "AuthToken",
+  "data": {
+    "currency": "USD",
+    "operator": "OperatorId",
+    "gameMode": "GameMode"
+  }
+}
+
+Expected response:
+{
+  "code": "OK",
+  "userId": "1",
+  "nickname": "user",
+  "balance": "100.50",
+  "currency": "USD",
+  "operator": "OperatorId",
+  "userAvatar": "(optional) https://example.com/avatar.png",
+  "token": "(optional) game session token (SessionToken)"
+}
+
+If a game session token (SessionToken) was not provided, then bet/withdraw/rollback requests will use AuthToken as
+the SessionToken.
+
+3.2 Placing a bet from a player's balance
+The request is sent at the start of the game. The amount specified in the request body (amount) should be debited
+from the player's account or frozen for the duration of the game (until the finalizing request is received) and then
+deducted.
+
+Incoming request:
+{
+  "action": "bet",
+  "token": "SessionToken",
+  "gameMode": "crash",
+  "data": {
+    "amount": "100.00",
+    "currency": "USD",
+    "operator": "OperatorId",
+    "user_id": "1",
+    "transactionId": "22166608-be33-438a-82d4-844c3b788d2e",
+    "gameId": "b1a9dcdb-09f9-44bf-b23d-a5c6019222bc"
+  }
+}
+
+Expected response:
+{
+  "code": "OK",
+  "balance": "100.00",
+  "hideFromStat": true // (optional) indicates whether the player should be hidden from statistics
+}
+
+3.3 Crediting the player's balance
+The request is sent when the player wins/loses the game. The amount specified in the request (result) should be
+credited to the player, the initial bet (amount) is already included in this amount and should not be credited additionally.
+If the game supports the creation of multiple bets within one player's game, then the request with the isFinished flag
+set to true will indicate that this is the last transaction and the player's game is considered completed.
+
+Incoming request:
+{
+  "action": "withdraw",
+  "token": "SessionToken",
+  "gameMode": "crash",
+  "data": {
+    "user_id": "1",
+    "currency": "USD",
+    "operator": "OperatorId",
+    "amount": "100.02",
+    "result": "200.04",
+    "coefficient": "2.00",
+    "transactionId": "34b40212-7081-427e-9196-1b94a7c0514b",
+    "debitId": "ddcd55cd-b5cb-48dc-84de-c37769b56cbb",
+    "gameId": "b1a9dcdb-09f9-44bf-b23d-a5c6019222bc",
+    "isFinished": true
+  }
+}
+
+Expected response:
+{
+  "code": "OK",
+  "balance": "100.00"
+}
+
+3.4 Refunding the player's balance
+The request is sent if the player has not finished the game within 6 hours or if a failure occurs. The amount is equal to
+the player's bet and must be credited to the player, or this amount must be unfrozen.
+If the game supports the creation of multiple bets within a single player's game, then a request with the isFinished flag
+set to true will indicate that this is the last transaction and the player's game is considered finished.
+
+Incoming request:
+{
+  "action": "rollback",
+  "token": "SessionToken",
+  "gameMode": "crash",
+  "data": {
+    "user_id": "1",
+    "currency": "USD",
+    "operator": "OperatorId",
+    "amount": "100.50",
+    "transactionId": "34b40212-7081-427e-9196-1b94a7c0514b",
+    "debitId": "ddcd55cd-b5cb-48dc-84de-c37769b56cbb",
+    "gameId": "b1a9dcdb-09f9-44bf-b23d-a5c6019222bc",
+    "isFinished": true
+  }
+}
+
+Expected response:
+{
+  "code": "OK",
+  "balance": "100"
+}
+
+3.5 Field Decryption
+| Field         | Type    | Description                                                                     |
+| ------------- | ------- | ------------------------------------------------------------------------------- |
+| nickname      | String  | Player's nickname                                                               |
+| userAvatar    | String  | Player's avatar link                                                            |
+| token         | String  | Player's authentication token                                                   |
+| action        | String  | Action type (`init`, `bet`, `withdraw`, `rollback`)                             |
+| gameMode      | String  | Game identifier                                                                 |
+| user_id       | String  | User ID in your system                                                          |
+| currency      | String  | Currency                                                                        |
+| operator      | UUID    | Operator ID (yours)                                                             |
+| amount        | String  | Bet amount                                                                      |
+| result        | String  | Withdrawal amount (result)                                                      |
+| coefficient   | String  | Payout coefficient (win)                                                        |
+| code          | String  | Response code                                                                   |
+| balance       | String  | Player's balance after deduction/crediting                                      |
+| hideFromStat  | Boolean | Whether to include the player in statistics (if `true`, the player is excluded) |
+| transactionId | UUID    | Unique transaction ID for credit/debit                                          |
+| debitId       | UUID    | ID of the canceled transaction (debit transaction)                              |
+| gameId        | UUID    | Unique user game ID                                                             |
+| isFinished    | Boolean | Indicates whether this is the last transaction for the user game ID             |
+

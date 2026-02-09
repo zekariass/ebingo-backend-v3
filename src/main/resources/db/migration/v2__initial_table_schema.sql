@@ -325,6 +325,7 @@ CREATE TABLE wallet (
     promotional_bonus NUMERIC(18,2) DEFAULT 0.00 NOT NULL,
     last_payment_from TEXT, -- WELCOME_BONUS/20*REFERRAL_BONUS/40*PROMOTIONAL_BONUS/60.40*etc
     agent_id BIGINT NOT NULL, -- NEW
+    version BIGINT NOT NULL DEFAULT 0,
     created_by BIGINT,
     updated_by BIGINT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

@@ -35,3 +35,25 @@ Autoplay Flow:
                            |
                            |-- findBotsByRoom(roomId).take(toSpawn=15)
                            |-- 15 bots join in parallel
+
+
+Questions:
+
+
+1. What does **`debitId`** represent, and in which scenarios is it included in a request?
+
+2. What does the **`coefficient`** field mean in a withdrawal action, and how is it used in calculations?
+
+3. Could you clarify the purpose of **`subOperatorId`**?
+   Initially, I assumed it referred to a sub-operator ID, but that does not seem to be the case in my understanding. What is its actual meaning and intended use?
+
+4. In our system, we use the term *agents* to describe users working under an operator. Can we add additional parameters to the game launch request to specify the agent associated with the user?
+
+5. For a withdrawal action, what is the difference between **`result`** and **`amount`**? is result betAmount + winAmount?
+
+6. What is the difference between **`subId`** and **`brandName`**?
+   Are they meant to represent the same thing, or do they serve different purposes?
+
+7. The documentation mentions two webhook events: one when a bonus is completed and another when a bonus is expired.
+   What happens if a user requests a withdrawal after using only part of their free bets?
+   Does the system require the user to finish all free bets before they can withdraw, or can they withdraw for partially used bonuses? If so, which event should we use to update the user’s balance — the withdrawal request or the bonus completion webhook?

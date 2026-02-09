@@ -24,13 +24,40 @@ public class TelegramAuthVerifier {
 
 
     public Optional<Map<String, String>> verifyInitData(String initData) {
+        return verifyInitData(initData, botToken, 600); // Default 10 minutes
+    }
 
+    /**
+     * Verify Telegram WebApp initData with custom bot token
+     * @param initData Raw initData string from Telegram WebApp
+     * @param customBotToken Bot token to use for verification
+     * @param maxAgeSeconds Maximum age of auth_date in seconds (e.g., 600 for 10 minutes)
+     * @return Optional containing parsed params if valid, empty otherwise
+     */
+    public Optional<Map<String, String>> verifyInitData(String initData, String customBotToken, int maxAgeSeconds) {
         try {
             Map<String, String> params = parseInitData(initData);
             String receivedHash = params.remove("hash");
             if (receivedHash == null) {
                 log.warn("No hash field in Telegram initData");
                 return Optional.empty();
+            }
+
+            // Check auth_date freshness
+            String authDateStr = params.get("auth_date");
+            if (authDateStr != null) {
+                try {
+                    long authDate = Long.parseLong(authDateStr);
+                    long currentTime = System.currentTimeMillis() / 1000;
+                    if (currentTime - authDate > maxAgeSeconds) {
+                        log.warn("Telegram initData expired: auth_date={}, current={}, maxAge={}", 
+                                authDate, currentTime, maxAgeSeconds);
+                        return Optional.empty();
+                    }
+                } catch (NumberFormatException e) {
+                    log.warn("Invalid auth_date format: {}", authDateStr);
+                    return Optional.empty();
+                }
             }
 
             // Build data check string
@@ -42,7 +69,7 @@ public class TelegramAuthVerifier {
             // Step 1: secretKey = HMAC_SHA256("WebAppData", botToken)
             Mac keyMac = Mac.getInstance("HmacSHA256");
             keyMac.init(new SecretKeySpec("WebAppData".getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-            byte[] secretKey = keyMac.doFinal(botToken.getBytes(StandardCharsets.UTF_8));
+            byte[] secretKey = keyMac.doFinal(customBotToken.getBytes(StandardCharsets.UTF_8));
 
             // Step 2: computedHash = HMAC_SHA256(secretKey, dataCheckString)
             Mac dataMac = Mac.getInstance("HmacSHA256");
@@ -53,6 +80,7 @@ public class TelegramAuthVerifier {
             if (receivedHash.equalsIgnoreCase(computedHash)) {
                 return Optional.of(params);
             } else {
+                log.warn("Telegram initData hash mismatch");
                 return Optional.empty();
             }
 

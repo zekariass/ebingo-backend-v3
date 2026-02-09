@@ -111,7 +111,7 @@ public class GameService {
     public Mono<Void> playerJoin(Long roomId, Long gameId_, String userId, Integer capacity,
                                  BigDecimal entryFee, List<String> selectedCardIds, Long agentId, ParticipantType participantType) {
 
-        log.info("USER {} SELECTED CARDS FOR ROOM {} ===== {}", userId, roomId, selectedCardIds);
+//        log.info("USER {} SELECTED CARDS FOR ROOM {} ===== {}", userId, roomId, selectedCardIds);
 
         AtomicBoolean paymentCompleted = new AtomicBoolean(false);
 
@@ -204,11 +204,13 @@ public class GameService {
                                                 paymentCompleted.set(true);
                                                 log.info("Payment successful for user {} in game {}", userId, gameId);
 
+                                                Boolean isBot = ParticipantType.BOT.equals(participantType);
+
                                                 // Store cardIds to participant type mapping in redis to identify card owner type
 //                                                return afterSuccessfulJoin(roomId, gameId, userId, capacity, selectedCardIds, agentId);
                                                 return participantTypeStore.putCards(gameId, selectedCardIds, participantType)
                                                         .then(participantTypeStore.expire(gameId, Duration.ofHours(3)))
-                                                        .then(afterSuccessfulJoin(roomId, gameId, userId, capacity, selectedCardIds, agentId));
+                                                        .then(afterSuccessfulJoin(roomId, gameId, userId, capacity, selectedCardIds, agentId, isBot));
                                             })
                                             .onErrorResume(error -> {
                                                 log.error("Unexpected error during payment for user {}: {}", userId, error.getMessage(), error);
@@ -292,63 +294,133 @@ public class GameService {
 //    }
 
 
+//    private Mono<Void> afterSuccessfulJoin(
+//            Long roomId,
+//            Long gameId,
+//            String userId,
+//            Integer capacity,
+//            List<String> selectedCardIds,
+//            Long agentId,
+//            Boolean isBot) {
+//        log.info("afterSuccessfulJoin: user {} joined game {}", userId, gameId);
+//
+//        final int cardsCount = selectedCardIds != null ? selectedCardIds.size() : 0;
+//
+//        if (cardsCount <= 0) {
+//            return Mono.error(new IllegalArgumentException("selectedCardIds must not be empty"));
+//        }
+//
+//        // 1) Get user from DB to determine bot/real
+//        return userProfileService.getUserProfileByTelegramIdAndAgentId(Long.parseLong(userId), agentId) // Mono<User>
+//                .switchIfEmpty(Mono.error(new IllegalArgumentException("User not found: " + userId)))
+//                .flatMap(users -> {
+//                    final boolean isBot = user.getIsBot(); // <-- adjust getter
+//                    final long botCardsDelta = isBot ? cardsCount : 0L;
+//                    final long realCardsDelta = isBot ? 0L : cardsCount;
+//
+//                    // 2) Update Redis metrics atomically (concurrency-safe)
+//                    return gameMetricsRedisService.addDeltas(
+//                                    gameId,
+//                                    botCardsDelta,
+//                                    realCardsDelta,
+//                                    java.math.BigDecimal.ZERO // realMoneyAmount not changed here
+//                            )
+//                            // 3) Continue your existing workflow
+//                            .then(gameStateService.getGameState(roomId, agentId))
+//                            .flatMap(state -> {
+//
+//                                Set<String> joinedPlayers = Optional.ofNullable(state.getJoinedPlayers()).orElse(Set.of());
+//                                int playersCount = joinedPlayers.size();
+//                                List<String> allSelectedCardIds = new ArrayList<>(state.getAllSelectedCardsIds());
+//
+//                                Long countdownDurationSeconds = Optional.ofNullable(state.getCountdownDurationSeconds()).orElse(-1L);
+//                                Instant countdownEndTime = state.getCountdownEndTime();
+//                                GameStatus status = state.getStatus();
+//
+//                                return broadcastPlayerJoin(
+//                                        roomId, userId, joinedPlayers, playersCount, selectedCardIds,
+//                                        allSelectedCardIds, countdownDurationSeconds, countdownEndTime, status, agentId
+//                                )
+//                                        // Update leaderboards
+//                                        .then(updateLeaderboardsOnJoin(
+//                                                Long.valueOf(userId),
+//                                                state.getEntryFee() * cardsCount,
+//                                                agentId
+//                                        ))
+//                                        .then(startCountdownIfEligible(
+//                                                state, roomId, gameId, userId, capacity, playersCount, agentId
+//                                        ));
+//                            });
+//                });
+//    }
+
     private Mono<Void> afterSuccessfulJoin(
             Long roomId,
             Long gameId,
             String userId,
             Integer capacity,
             List<String> selectedCardIds,
-            Long agentId
+            Long agentId,
+            boolean isBot
     ) {
         log.info("afterSuccessfulJoin: user {} joined game {}", userId, gameId);
 
         final int cardsCount = selectedCardIds != null ? selectedCardIds.size() : 0;
-
-        if (cardsCount <= 0) {
+        if (cardsCount == 0) {
             return Mono.error(new IllegalArgumentException("selectedCardIds must not be empty"));
         }
 
-        // 1) Get user from DB to determine bot/real
-        return userProfileService.getUserProfileByTelegramIdAndAgentId(Long.parseLong(userId), agentId) // Mono<User>
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("User not found: " + userId)))
-                .flatMap(user -> {
-                    final boolean isBot = user.getIsBot(); // <-- adjust getter
-                    final long botCardsDelta = isBot ? cardsCount : 0L;
-                    final long realCardsDelta = isBot ? 0L : cardsCount;
+        // ✅ Use passed flag — no DB lookup
+        final long botCardsDelta = isBot ? cardsCount : 0L;
+        final long realCardsDelta = isBot ? 0L : cardsCount;
 
-                    // 2) Update Redis metrics atomically (concurrency-safe)
-                    return gameMetricsRedisService.addDeltas(
+        return gameMetricsRedisService.addDeltas(
+                        gameId,
+                        botCardsDelta,
+                        realCardsDelta,
+                        BigDecimal.ZERO
+                )
+                .then(gameStateService.getGameState(roomId, agentId))
+                .flatMap(state -> {
+
+                    Set<String> joinedPlayers =
+                            Optional.ofNullable(state.getJoinedPlayers()).orElse(Set.of());
+                    int playersCount = joinedPlayers.size();
+                    List<String> allSelectedCardIds =
+                            new ArrayList<>(state.getAllSelectedCardsIds());
+
+                    Long countdownDurationSeconds =
+                            Optional.ofNullable(state.getCountdownDurationSeconds()).orElse(-1L);
+                    Instant countdownEndTime = state.getCountdownEndTime();
+                    GameStatus status = state.getStatus();
+
+                    return broadcastPlayerJoin(
+                            roomId,
+                            userId,
+                            joinedPlayers,
+                            playersCount,
+                            selectedCardIds,
+                            allSelectedCardIds,
+                            countdownDurationSeconds,
+                            countdownEndTime,
+                            status,
+                            agentId
+                    )
+                            // leaderboard update (real users only effectively)
+                            .then(isBot ? Mono.empty() : updateLeaderboardsOnJoin(
+                                    Long.valueOf(userId),
+                                    state.getEntryFee() * cardsCount,
+                                    agentId
+                            ))
+                            .then(startCountdownIfEligible(
+                                    state,
+                                    roomId,
                                     gameId,
-                                    botCardsDelta,
-                                    realCardsDelta,
-                                    java.math.BigDecimal.ZERO // realMoneyAmount not changed here
-                            )
-                            // 3) Continue your existing workflow
-                            .then(gameStateService.getGameState(roomId, agentId))
-                            .flatMap(state -> {
-
-                                Set<String> joinedPlayers = Optional.ofNullable(state.getJoinedPlayers()).orElse(Set.of());
-                                int playersCount = joinedPlayers.size();
-                                List<String> allSelectedCardIds = new ArrayList<>(state.getAllSelectedCardsIds());
-
-                                Long countdownDurationSeconds = Optional.ofNullable(state.getCountdownDurationSeconds()).orElse(-1L);
-                                Instant countdownEndTime = state.getCountdownEndTime();
-                                GameStatus status = state.getStatus();
-
-                                return broadcastPlayerJoin(
-                                        roomId, userId, joinedPlayers, playersCount, selectedCardIds,
-                                        allSelectedCardIds, countdownDurationSeconds, countdownEndTime, status, agentId
-                                )
-                                        // Update leaderboards
-                                        .then(updateLeaderboardsOnJoin(
-                                                Long.valueOf(userId),
-                                                state.getEntryFee() * cardsCount,
-                                                agentId
-                                        ))
-                                        .then(startCountdownIfEligible(
-                                                state, roomId, gameId, userId, capacity, playersCount, agentId
-                                        ));
-                            });
+                                    userId,
+                                    capacity,
+                                    playersCount,
+                                    agentId
+                            ));
                 });
     }
 
@@ -1287,7 +1359,7 @@ public class GameService {
 
             state.getDrawnNumbers().add(number);
 //            log.info("Drawing number {} for game {}: ", number, state.getGameId());
-            log.info("Drawing number {} for game {} and room {}: drawnNumbers={}", number, state.getGameId(), state.getRoomId(), state.getDrawnNumbers());
+//            log.info("Drawing number {} for game {} and room {}: drawnNumbers={}", number, state.getGameId(), state.getRoomId(), state.getDrawnNumbers());
 
             // Save updated state to Redis
             return gameStateService.saveGameStateToRedis(state, state.getRoomId(), agentId)

@@ -339,132 +339,73 @@ public class GameTransactionServiceImpl implements GameTransactionService {
     @Override
     public Mono<GameTransactionDto> createGameTransactionForPrizePayout(GameState state, Long dbUserId, GameTxnType gameTxnType, Long gameId, Long agentId) {
 
-//        return userProfileService.getUserProfileById(dbUserId)
-//                .flatMap(up -> {
-//                    return bingoGameMetricsRedisService.getMetrics(gameId)
-//                            .flatMap(metrics -> {
-//
-//                                // Calculate payout, commission, and single game fee
-//                                BigDecimal payout = BigDecimal
-//                                        .valueOf(state.getAllSelectedCardsIds().size())
-//                                        .multiply(BigDecimal.valueOf(state.getEntryFee()))
-//                                        .multiply(BigDecimal.ONE.subtract(BigDecimal.valueOf(state.getCommissionRate())));
-//                                BigDecimal commissionAmount = BigDecimal
-//                                        .valueOf(state.getAllSelectedCardsIds().size())
-//                                        .multiply(BigDecimal.valueOf(state.getEntryFee()))
-//                                        .subtract(payout);
-//                                BigDecimal singleGameFee = BigDecimal.valueOf(state.getEntryFee());
-//
-//
-//                                // Calculate the metrics for accurate accounting
-//                                BigDecimal realBetAmount = metrics.realMoneyAmount();
-//                                BigDecimal realCommissionAmount = realBetAmount.multiply(BigDecimal.valueOf(state.getCommissionRate()));
-//                                BigDecimal botWinAmount;
-//                                BigDecimal botLossAmount;
-////                                BigDecimal prizeAmount = BigDecimal.ZERO;
-//                                if (up.getIsBot()) {
-//                                    botLossAmount = BigDecimal.ZERO;
-//                                    botWinAmount = realBetAmount.subtract(realCommissionAmount);
-//                                    payout = botWinAmount;
-//                                } else {
-//                                    botWinAmount = BigDecimal.ZERO;
-//                                    BigDecimal botsTotalBetAmount = BigDecimal.valueOf(metrics.botCardsCount()).multiply(singleGameFee);
-//                                    botLossAmount = botsTotalBetAmount
-//                                            .subtract(botsTotalBetAmount.multiply(BigDecimal.valueOf(state.getCommissionRate())));
-//
-//                                }
-//
-//                                BigDecimal payoutFinal = payout;
-//
-//                                return createGameTransaction(dbUserId, payout, gameTxnType, gameId, commissionAmount, singleGameFee, agentId)
-//                                        .flatMap(txnDto ->
-//                                                updateLeaderboardsOnPrizePayout(dbUserId, payoutFinal, singleGameFee, agentId)
-//                                                        .then(dailyAgentAccountingService.updateForPrizePayout(agentId,
-//                                                                realBetAmount,
-//                                                                payoutFinal,
-//                                                                realCommissionAmount,
-//                                                                botWinAmount,
-//                                                                botLossAmount))
-//                                                        .then(totalAgentAccountingService.updateForPrizePayout(
-//                                                                agentId,
-//                                                                realBetAmount,
-//                                                                payoutFinal,
-//                                                                realCommissionAmount,
-//                                                                botWinAmount,
-//                                                                botLossAmount
-//                                                        ))
-//                                                        .thenReturn(txnDto) // return original dto
-//                                        );
-//                            });
-//                });
-
         return userProfileService.getUserProfileById(dbUserId)
                 .flatMap(up -> bingoGameMetricsRedisService.getMetrics(gameId)
-                        .flatMap(metrics -> {
+                                .flatMap(metrics -> {
 
-                            final BigDecimal rate = BigDecimal.valueOf(state.getCommissionRate());
-                            final BigDecimal entryFee = BigDecimal.valueOf(state.getEntryFee());
+                                    final BigDecimal rate = BigDecimal.valueOf(state.getCommissionRate());
+                                    final BigDecimal entryFee = BigDecimal.valueOf(state.getEntryFee());
 
-                            final int totalCards = state.getAllSelectedCardsIds().size();
-                            final BigDecimal totalPot = BigDecimal.valueOf(totalCards).multiply(entryFee); // real + bots (virtual)
-                            final BigDecimal realPot = metrics.realMoneyAmount();                          // real only
+                                    final int totalCards = state.getAllSelectedCardsIds().size();
+                                    final BigDecimal totalPot = BigDecimal.valueOf(totalCards).multiply(entryFee); // real + bots (virtual)
+                                    final BigDecimal realPot = metrics.realMoneyAmount();                          // real only
 
-                            // Commissions (two different concepts)
-                            final BigDecimal potCommission = totalPot.multiply(rate);      // on total pot
-                            final BigDecimal realCommission = realPot.multiply(rate);      // on real money only
+                                    // Commissions (two different concepts)
+                                    final BigDecimal potCommission = totalPot.multiply(rate);      // on total pot
+                                    final BigDecimal realCommission = realPot.multiply(rate);      // on real money only
 
-                            // Payout depends on winner type (your rule)
-                            final boolean isBotWinner = Boolean.TRUE.equals(up.getIsBot());
+                                    // Payout depends on winner type (your rule)
+                                    final boolean isBotWinner = Boolean.TRUE.equals(up.getIsBot());
 
-                            final BigDecimal payout = isBotWinner
-                                    ? realPot.subtract(realCommission)     // bot wins => platform keeps real after commission
-                                    : totalPot.subtract(potCommission);    // real player wins => gets total pot after pot commission
+                                    final BigDecimal payout = isBotWinner
+                                            ? realPot.subtract(realCommission)     // bot wins => platform keeps real after commission
+                                            : totalPot.subtract(potCommission);    // real player wins => gets total pot after pot commission
 
-                            // Choose what "commission" means in the transaction record.
-                            // Usually you'd want REAL commission because that's actual revenue.
-                            final BigDecimal commissionForTxn = realCommission;
+                                    // Choose what "commission" means in the transaction record.
+                                    // Usually you'd want REAL commission because that's actual revenue.
+                                    final BigDecimal commissionForTxn = realCommission;
 
-                            // Bot accounting amounts
-                            final BigDecimal botWinAmount = isBotWinner ? payout : BigDecimal.ZERO;
+                                    // Bot accounting amounts
+                                    final BigDecimal botWinAmount = isBotWinner ? payout : BigDecimal.ZERO;
 
-                            final BigDecimal botLossAmount;
-                            if (isBotWinner) {
-                                botLossAmount = BigDecimal.ZERO;
-                            } else {
-                                final BigDecimal botsTotalPot =
-                                        BigDecimal.valueOf(metrics.botCardsCount()).multiply(entryFee);
+                                    final BigDecimal botLossAmount;
+                                    if (isBotWinner) {
+                                        botLossAmount = BigDecimal.ZERO;
+                                    } else {
+                                        final BigDecimal botsTotalPot =
+                                                BigDecimal.valueOf(metrics.botCardsCount()).multiply(entryFee);
 
-                                botLossAmount = botsTotalPot.subtract(botsTotalPot.multiply(rate));
-                            }
-                            log.info("<><><><><><><><><><><><><><><><> METRICS: {}", metrics);
-                            log.info("<><><><><><><><><><><><><><><><> " +
-                                            "ALl values for prize payout txn: {}, {}, {}, {}, {}, {}, {}, {}",
-                                    totalCards, totalPot, realPot, payout, potCommission,
-                                    realCommission, botWinAmount, botLossAmount
-                            );
+                                        botLossAmount = botsTotalPot.subtract(botsTotalPot.multiply(rate));
+                                    }
+//                            log.info("<><><><><><><><><><><><><><><><> METRICS: {}", metrics);
+//                            log.info("<><><><><><><><><><><><><><><><> " +
+//                                            "ALl values for prize payout txn: {}, {}, {}, {}, {}, {}, {}, {}",
+//                                    totalCards, totalPot, realPot, payout, potCommission,
+//                                    realCommission, botWinAmount, botLossAmount
+//                            );
 
-                            return createGameTransaction(dbUserId, payout, gameTxnType, gameId, commissionForTxn, entryFee, agentId)
-                                    .flatMap(txnDto ->
-                                            updateLeaderboardsOnPrizePayout(dbUserId, payout, entryFee, agentId)
-                                                    .then(dailyAgentAccountingService.updateForPrizePayout(
-                                                            agentId,
-                                                            realPot,
-                                                            payout,
-                                                            realCommission,
-                                                            botWinAmount,
-                                                            botLossAmount
-                                                    ))
-                                                    .then(totalAgentAccountingService.updateForPrizePayout(
-                                                            agentId,
-                                                            realPot,
-                                                            payout,
-                                                            realCommission,
-                                                            botWinAmount,
-                                                            botLossAmount
-                                                    ))
-                                                    .thenReturn(txnDto)
-                                    );
-                        })
+                                    return createGameTransaction(dbUserId, payout, gameTxnType, gameId, commissionForTxn, entryFee, agentId)
+                                            .flatMap(txnDto ->
+                                                    updateLeaderboardsOnPrizePayout(dbUserId, payout, entryFee, agentId)
+                                                            .then(dailyAgentAccountingService.updateForPrizePayout(
+                                                                    agentId,
+                                                                    realPot,
+                                                                    payout,
+                                                                    realCommission,
+                                                                    botWinAmount,
+                                                                    botLossAmount
+                                                            ))
+                                                            .then(totalAgentAccountingService.updateForPrizePayout(
+                                                                    agentId,
+                                                                    realPot,
+                                                                    payout,
+                                                                    realCommission,
+                                                                    botWinAmount,
+                                                                    botLossAmount
+                                                            ))
+                                                            .thenReturn(txnDto)
+                                            );
+                                })
                 );
 
 
