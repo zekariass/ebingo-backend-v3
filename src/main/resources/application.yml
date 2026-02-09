@@ -5,6 +5,14 @@ spring:
     url: ${EBINGO_DB_URL}
     username: ${EBINGO_DB_USER}
     password: ${EBINGO_DB_PASSWORD}
+    pool: #NEWLY ADDED
+      enabled: true
+      initial-size: 5
+      max-size: 30
+      max-idle-time: 30m
+      max-life-time: 60m
+      max-acquire-time: 2s
+      acquire-retry: 3
   flyway:
     enabled: ${FLYWAY_ENABLED:false}
     url: ${EBINGO_DB_URL}
@@ -41,21 +49,15 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
-
+        include: health,info,metrics
   endpoint:
     health:
       probes:
-        enabled: true          # enables /health/liveness and /health/readiness
-      show-details: never      # keep response small/fast
-      cache:
-        time-to-live: 2s       # cache heavy /health aggregation a bit
+        enabled: true
+      show-details: always   # change to "always" only if you want detailed health output
+    metrics:
+      enabled: true
 
-  health:
-    livenessstate:
-      enabled: true
-    readinessstate:
-      enabled: true
 
 
 
