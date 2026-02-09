@@ -38,14 +38,25 @@ server:
   port: 8080
 
 management:
-  endpoint:
-    health:
-      probes:
-        enabled: true
   endpoints:
     web:
       exposure:
         include: health,info
+
+  endpoint:
+    health:
+      probes:
+        enabled: true          # enables /health/liveness and /health/readiness
+      show-details: never      # keep response small/fast
+      cache:
+        time-to-live: 2s       # cache heavy /health aggregation a bit
+
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+
 
 
 springdoc:
