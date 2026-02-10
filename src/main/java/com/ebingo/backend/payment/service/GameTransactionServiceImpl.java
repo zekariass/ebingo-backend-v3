@@ -167,7 +167,7 @@ public class GameTransactionServiceImpl implements GameTransactionService {
                 .flatMap(userProfile -> {
                     if (Boolean.TRUE.equals(userProfile.getIsBot())) {
                         // BOT FLOW: Only wallet operation, return a minimal DTO or leave it
-                        log.info("Handling wallet operation for bot userProfileId: {}", userProfileId);
+//                        log.info("Handling wallet operation for bot userProfileId: {}", userProfileId);
 //                        return handleWalletOperation(userProfileId, safeAmount, gameTxnType, gameId)
 //                                .then
                         return Mono.just(GameTransactionDto.builder()
@@ -186,7 +186,7 @@ public class GameTransactionServiceImpl implements GameTransactionService {
                         ).map(GameTransactionMapper::toDto);
                     }
                 })
-                .doOnSuccess(dto -> log.info("Game transaction processed: {}", dto))
+//                .doOnSuccess(dto -> log.info("Game transaction processed: {}", dto))
                 .doOnError(err -> log.error("Failed to create game transaction", err));
     }
 
@@ -208,6 +208,8 @@ public class GameTransactionServiceImpl implements GameTransactionService {
         gameTransaction.setTxnStatus(GameTxnStatus.SUCCESS);
         gameTransaction.setCommissionAmount(commissionAmount);
         gameTransaction.setSingleGameFee(singleGameFee);
+
+        log.info(">>>>>>>>>>>>>>>>>>>>>>>>>>>> Game transaction: {}", amount);
 
         return gameTransactionRepository.save(gameTransaction)
                 .flatMap(savedTxn -> {

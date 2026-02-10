@@ -91,7 +91,7 @@ public class GoldenEggsIntegrationService {
                 .retrieve()
                 .bodyToMono(new ParameterizedTypeReference<List<GameModeDto>>() {
                 })
-                .doOnSuccess(response -> log.debug("Game modes list retrieved successfully"))
+                .doOnSuccess(response -> log.debug("Game modes list retrieved successfully {} ", response))
                 .doOnError(error -> log.error("Error fetching game modes list", error));
     }
 
@@ -450,36 +450,36 @@ public class GoldenEggsIntegrationService {
 
                     return txnRepository.save(txn)
                             .flatMap(savedTxn -> {
-                                    // Mark as not new to allow UPDATE on subsequent saves
-                                    savedTxn.setNew(false);
-                                    return walletService.debitExternalGame(
-                                                    session.getUserId(),
-                                                    amount,
-                                                    request.getData().getCurrency(),
-                                                    request.getData().getTransactionId(),
-                                                    request.getData().getGameId()
-                                            )
-                                            .flatMap(walletResult -> {
-                                                if (walletResult.isSuccess()) {
-                                                    savedTxn.setStatus("SUCCESS");
-                                                    // Record bet in accounting (async)
-                                                    recordBetAsync(amount, request.getData().getCurrency(), session.getAgentId());
-                                                    return txnRepository.save(savedTxn)
-                                                            .map(updated -> BetResponse.builder()
-                                                                    .code("OK")
-                                                                    .balance(walletResult.getBalance())
-                                                                    .build());
-                                                } else {
-                                                    savedTxn.setStatus("FAILED");
-                                                    savedTxn.setErrorCode(walletResult.getErrorCode());
-                                                    savedTxn.setErrorMessage(walletResult.getErrorMessage());
-                                                    return txnRepository.save(savedTxn)
-                                                            .map(updated -> ErrorResponse.builder()
-                                                                    .code(walletResult.getErrorCode())
-                                                                    .message(walletResult.getErrorMessage())
-                                                                    .build());
-                                                }
-                                            });
+                                // Mark as not new to allow UPDATE on subsequent saves
+                                savedTxn.setNew(false);
+                                return walletService.debitExternalGame(
+                                                session.getUserId(),
+                                                amount,
+                                                request.getData().getCurrency(),
+                                                request.getData().getTransactionId(),
+                                                request.getData().getGameId()
+                                        )
+                                        .flatMap(walletResult -> {
+                                            if (walletResult.isSuccess()) {
+                                                savedTxn.setStatus("SUCCESS");
+                                                // Record bet in accounting (async)
+                                                recordBetAsync(amount, request.getData().getCurrency(), session.getAgentId());
+                                                return txnRepository.save(savedTxn)
+                                                        .map(updated -> BetResponse.builder()
+                                                                .code("OK")
+                                                                .balance(walletResult.getBalance())
+                                                                .build());
+                                            } else {
+                                                savedTxn.setStatus("FAILED");
+                                                savedTxn.setErrorCode(walletResult.getErrorCode());
+                                                savedTxn.setErrorMessage(walletResult.getErrorMessage());
+                                                return txnRepository.save(savedTxn)
+                                                        .map(updated -> ErrorResponse.builder()
+                                                                .code(walletResult.getErrorCode())
+                                                                .message(walletResult.getErrorMessage())
+                                                                .build());
+                                            }
+                                        });
                             });
                 })
                 .switchIfEmpty(Mono.just(ErrorResponse.builder()
@@ -541,47 +541,47 @@ public class GoldenEggsIntegrationService {
 
                                     return txnRepository.save(txn)
                                             .flatMap(savedTxn -> {
-                                                    // Mark as not new to allow UPDATE on subsequent saves
-                                                    savedTxn.setNew(false);
-                                                    return walletService.creditExternalGame(
-                                                                    gameSession.getUserId(),
-                                                                    result,
-                                                                    request.getData().getCurrency(),
-                                                                    request.getData().getTransactionId(),
-                                                                    request.getData().getDebitId(),
-                                                                    request.getData().getGameId()
-                                                            )
-                                                            .flatMap(walletResult -> {
-                                                                try {
-                                                                    String responseJson;
-                                                                    if (walletResult.isSuccess()) {
-                                                                        savedTxn.setStatus("SUCCESS");
-                                                                        // Record win in accounting (async)
-                                                                        recordWinAsync(result, request.getData().getCurrency(), gameSession.getAgentId());
-                                                                        WithdrawResponse response = WithdrawResponse.builder()
-                                                                                .code("OK")
-                                                                                .balance(walletResult.getBalance())
-                                                                                .build();
-                                                                        responseJson = objectMapper.writeValueAsString(response);
-                                                                    } else {
-                                                                        savedTxn.setStatus("FAILED");
-                                                                        savedTxn.setErrorCode(walletResult.getErrorCode());
-                                                                        savedTxn.setErrorMessage(walletResult.getErrorMessage());
-                                                                        ErrorResponse errorResponse = ErrorResponse.builder()
-                                                                                .code(walletResult.getErrorCode())
-                                                                                .message(walletResult.getErrorMessage())
-                                                                                .build();
-                                                                        responseJson = objectMapper.writeValueAsString(errorResponse);
-                                                                    }
-
-                                                                    savedTxn.setResponseSnapshot(responseJson);
-                                                                    return txnRepository.save(savedTxn)
-                                                                            .map(updated -> responseJson);
-                                                                } catch (JsonProcessingException e) {
-                                                                    log.error("Error serializing response", e);
-                                                                    return Mono.just("{\"code\":\"UNKNOWN_ERROR\"}");
+                                                // Mark as not new to allow UPDATE on subsequent saves
+                                                savedTxn.setNew(false);
+                                                return walletService.creditExternalGame(
+                                                                gameSession.getUserId(),
+                                                                result,
+                                                                request.getData().getCurrency(),
+                                                                request.getData().getTransactionId(),
+                                                                request.getData().getDebitId(),
+                                                                request.getData().getGameId()
+                                                        )
+                                                        .flatMap(walletResult -> {
+                                                            try {
+                                                                String responseJson;
+                                                                if (walletResult.isSuccess()) {
+                                                                    savedTxn.setStatus("SUCCESS");
+                                                                    // Record win in accounting (async)
+                                                                    recordWinAsync(result, request.getData().getCurrency(), gameSession.getAgentId());
+                                                                    WithdrawResponse response = WithdrawResponse.builder()
+                                                                            .code("OK")
+                                                                            .balance(walletResult.getBalance())
+                                                                            .build();
+                                                                    responseJson = objectMapper.writeValueAsString(response);
+                                                                } else {
+                                                                    savedTxn.setStatus("FAILED");
+                                                                    savedTxn.setErrorCode(walletResult.getErrorCode());
+                                                                    savedTxn.setErrorMessage(walletResult.getErrorMessage());
+                                                                    ErrorResponse errorResponse = ErrorResponse.builder()
+                                                                            .code(walletResult.getErrorCode())
+                                                                            .message(walletResult.getErrorMessage())
+                                                                            .build();
+                                                                    responseJson = objectMapper.writeValueAsString(errorResponse);
                                                                 }
-                                                            });
+
+                                                                savedTxn.setResponseSnapshot(responseJson);
+                                                                return txnRepository.save(savedTxn)
+                                                                        .map(updated -> responseJson);
+                                                            } catch (JsonProcessingException e) {
+                                                                log.error("Error serializing response", e);
+                                                                return Mono.just("{\"code\":\"UNKNOWN_ERROR\"}");
+                                                            }
+                                                        });
                                             });
                                 })
                                 .switchIfEmpty(Mono.fromCallable(() -> {
@@ -652,47 +652,47 @@ public class GoldenEggsIntegrationService {
 
                                     return txnRepository.save(txn)
                                             .flatMap(savedTxn -> {
-                                                    // Mark as not new to allow UPDATE on subsequent saves
-                                                    savedTxn.setNew(false);
-                                                    return walletService.rollbackExternalGame(
-                                                                    gameSession.getUserId(),
-                                                                    amount,
-                                                                    request.getData().getCurrency(),
-                                                                    request.getData().getTransactionId(),
-                                                                    request.getData().getDebitId(),
-                                                                    request.getData().getGameId()
-                                                            )
-                                                            .flatMap(walletResult -> {
-                                                                try {
-                                                                    String responseJson;
-                                                                    if (walletResult.isSuccess()) {
-                                                                        savedTxn.setStatus("SUCCESS");
-                                                                        // Record rollback in accounting (async)
-                                                                        recordRollbackAsync(amount, request.getData().getCurrency(), gameSession.getAgentId());
-                                                                        RollbackResponse response = RollbackResponse.builder()
-                                                                                .code("OK")
-                                                                                .balance(walletResult.getBalance())
-                                                                                .build();
-                                                                        responseJson = objectMapper.writeValueAsString(response);
-                                                                    } else {
-                                                                        savedTxn.setStatus("FAILED");
-                                                                        savedTxn.setErrorCode(walletResult.getErrorCode());
-                                                                        savedTxn.setErrorMessage(walletResult.getErrorMessage());
-                                                                        ErrorResponse errorResponse = ErrorResponse.builder()
-                                                                                .code(walletResult.getErrorCode())
-                                                                                .message(walletResult.getErrorMessage())
-                                                                                .build();
-                                                                        responseJson = objectMapper.writeValueAsString(errorResponse);
-                                                                    }
-
-                                                                    savedTxn.setResponseSnapshot(responseJson);
-                                                                    return txnRepository.save(savedTxn)
-                                                                            .map(updated -> responseJson);
-                                                                } catch (JsonProcessingException e) {
-                                                                    log.error("Error serializing response", e);
-                                                                    return Mono.just("{\"code\":\"UNKNOWN_ERROR\"}");
+                                                // Mark as not new to allow UPDATE on subsequent saves
+                                                savedTxn.setNew(false);
+                                                return walletService.rollbackExternalGame(
+                                                                gameSession.getUserId(),
+                                                                amount,
+                                                                request.getData().getCurrency(),
+                                                                request.getData().getTransactionId(),
+                                                                request.getData().getDebitId(),
+                                                                request.getData().getGameId()
+                                                        )
+                                                        .flatMap(walletResult -> {
+                                                            try {
+                                                                String responseJson;
+                                                                if (walletResult.isSuccess()) {
+                                                                    savedTxn.setStatus("SUCCESS");
+                                                                    // Record rollback in accounting (async)
+                                                                    recordRollbackAsync(amount, request.getData().getCurrency(), gameSession.getAgentId());
+                                                                    RollbackResponse response = RollbackResponse.builder()
+                                                                            .code("OK")
+                                                                            .balance(walletResult.getBalance())
+                                                                            .build();
+                                                                    responseJson = objectMapper.writeValueAsString(response);
+                                                                } else {
+                                                                    savedTxn.setStatus("FAILED");
+                                                                    savedTxn.setErrorCode(walletResult.getErrorCode());
+                                                                    savedTxn.setErrorMessage(walletResult.getErrorMessage());
+                                                                    ErrorResponse errorResponse = ErrorResponse.builder()
+                                                                            .code(walletResult.getErrorCode())
+                                                                            .message(walletResult.getErrorMessage())
+                                                                            .build();
+                                                                    responseJson = objectMapper.writeValueAsString(errorResponse);
                                                                 }
-                                                            });
+
+                                                                savedTxn.setResponseSnapshot(responseJson);
+                                                                return txnRepository.save(savedTxn)
+                                                                        .map(updated -> responseJson);
+                                                            } catch (JsonProcessingException e) {
+                                                                log.error("Error serializing response", e);
+                                                                return Mono.just("{\"code\":\"UNKNOWN_ERROR\"}");
+                                                            }
+                                                        });
                                             });
                                 })
                                 .switchIfEmpty(Mono.fromCallable(() -> {

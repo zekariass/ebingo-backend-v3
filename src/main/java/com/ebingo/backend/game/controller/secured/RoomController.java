@@ -43,44 +43,6 @@ public class RoomController {
 //            @RequestHeader(value = "x-init-data", required = true) String telegramInitData,
             ServerWebExchange exchange
     ) {
-
-//        Optional<Map<String, String>> initData = telegramAuthVerifier.verifyInitData(telegramInitData);
-//        if (initData.isEmpty()) {
-//            return Mono.just(ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
-//                    ApiResponse.<RoomDto>builder()
-//                            .statusCode(HttpStatus.UNAUTHORIZED.value())
-//                            .success(false)
-//                            .message("Invalid telegram init data")
-//                            .path(exchange.getRequest().getPath().value())
-//                            .timestamp(Instant.now())
-//                            .build()
-//            ));
-//        }
-
-//        Map<String, Object> user;
-//        long telegramId;
-//
-//        try {
-//            user = objectMapper.readValue(initData.get().get("user"), Map.class);
-//
-//            if (!user.containsKey("id")) {
-//                return Mono.just(ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
-//                        ApiResponse.<RoomDto>builder()
-//                                .statusCode(HttpStatus.UNAUTHORIZED.value())
-//                                .success(false)
-//                                .message("Telegram user data does not contain id")
-//                                .path(exchange.getRequest().getPath().value())
-//                                .timestamp(Instant.now())
-//                                .build()
-//                ));
-//            }
-//
-//            telegramId = Long.parseLong(user.get("id").toString());
-//        } catch (JsonProcessingException e) {
-//            throw new RuntimeException(e);
-//        }
-
-
         return roomService.createRoom(roomDto, telegramId)
                 .map(createdRoom -> ApiResponse.<RoomDto>builder()
                         .statusCode(HttpStatus.CREATED.value())
@@ -144,7 +106,6 @@ public class RoomController {
             @Parameter(required = true, description = "Room ID") @PathVariable Long id,
             @Parameter(required = true, description = "Agent ID") @RequestParam Long agentId,
             @Parameter(required = true, description = "Room") @Valid @RequestBody RoomUpdateDto roomDto,
-//            @RequestHeader(value = "x-init-data", required = true) String telegramInitData,
             ServerWebExchange exchange) {
 
         return roomService.updateRoomById(id, roomDto, agentId)

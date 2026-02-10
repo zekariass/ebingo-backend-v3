@@ -34,7 +34,7 @@ public class PlayerCleanupService {
                 .collectList()
                 .flatMap(cardIds -> {
                     if (cardIds.isEmpty()) {
-                        log.info("No cards to release for user {} in game {}", userId, gameId);
+//                        log.info("No cards to release for user {} in game {}", userId, gameId);
                         return deleteRemainingPlayerKeys(gameId, userId)
                                 .then(Mono.just(cardIds));
                     }

@@ -113,7 +113,7 @@ public class RoomServiceImpl implements RoomService {
                 roomRepository.findById(id)
                         .switchIfEmpty(Mono.error(new ResourceNotFoundException("Room not found with id: " + id)))
                         .onErrorMap(e -> new RuntimeException("Error getting room by id: " + id, e))
-                        .doOnSuccess(r -> log.info("Room found: {}", r.getName()))
+//                        .doOnSuccess(r -> log.info("Room found: {}", r.getName()))
                         .map(RoomMapper::toRoomWithCardPoolDto),
                 RoomWithCardPoolDto.class
         );
@@ -129,7 +129,7 @@ public class RoomServiceImpl implements RoomService {
                 roomRepository.findById(id)
                         .switchIfEmpty(Mono.error(new ResourceNotFoundException("Room not found with id: " + id)))
                         .onErrorMap(e -> new RuntimeException("Error getting room by id: " + id, e))
-                        .doOnSuccess(r -> log.info("Room found: {}", r.getName()))
+//                        .doOnSuccess(r -> log.info("Room found: {}", r.getName()))
                         .map(RoomMapper::toInternalDto),
                 RoomInternalDto.class
         );

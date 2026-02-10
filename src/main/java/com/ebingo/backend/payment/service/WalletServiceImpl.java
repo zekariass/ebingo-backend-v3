@@ -267,23 +267,27 @@ public class WalletServiceImpl implements WalletService {
     public Mono<WalletDto> debit(Wallet wallet, BigDecimal amount, GameTxnType gameTxnType, Long gameId) {
         log.info("Debiting wallet with id: {} for amount: {}", wallet.getId(), amount);
 
-        String walletCacheKey = CacheKeyUtil.getWalletByUserProfileIdAndAgentIdKey(wallet.getUserProfileId(), wallet.getAgentId());
-        Mono<Boolean> evictByUserId = cacheService.evict(walletCacheKey);
+        // Fetch wallet fresh from DB to ensure R2DBC tracks it as existing entity
+        return walletRepository.findById(wallet.getId())
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("Wallet not found with id: " + wallet.getId())))
+                .flatMap(dbWallet -> {
+                    String walletCacheKey = CacheKeyUtil.getWalletByUserProfileIdAndAgentIdKey(dbWallet.getUserProfileId(), dbWallet.getAgentId());
+                    Mono<Boolean> evictByUserId = cacheService.evict(walletCacheKey);
 
-        Mono<UserProfileDto> userProfileMono = userProfileService.getUserProfileById(wallet.getUserProfileId());
+                    Mono<UserProfileDto> userProfileMono = userProfileService.getUserProfileById(dbWallet.getUserProfileId());
 
-        return evictByUserId
-                .then(userProfileMono)
-                .flatMap(userProfile -> {
-                    String walletCacheKeyByTelegram = CacheKeyUtil.getWalletByTelegramIdKey(userProfile.getTelegramId(), wallet.getAgentId());
-                    Mono<Boolean> evictByTelegram = cacheService.evict(walletCacheKeyByTelegram);
+                    return evictByUserId
+                            .then(userProfileMono)
+                            .flatMap(userProfile -> {
+                                String walletCacheKeyByTelegram = CacheKeyUtil.getWalletByTelegramIdKey(userProfile.getTelegramId(), dbWallet.getAgentId());
+                                Mono<Boolean> evictByTelegram = cacheService.evict(walletCacheKeyByTelegram);
 
-                    return evictByTelegram.then(
-                            Mono.defer(() -> {
-                                if (GameTxnType.GAME_FEE.equals(gameTxnType) && !userProfile.getIsBot()) {
+                                return evictByTelegram.then(
+                                        Mono.defer(() -> {
+                                            if (GameTxnType.GAME_FEE.equals(gameTxnType) && !userProfile.getIsBot()) {
 
-                                    // 1️⃣ Check total balance first
-                                    if (wallet.getTotalAvailableBalance().compareTo(amount) < 0) {
+                                                // 1️⃣ Check total balance first
+                                                if (dbWallet.getTotalAvailableBalance().compareTo(amount) < 0) {
                                         return Mono.error(new InsufficientBalanceException("Insufficient balance"));
                                     }
 
@@ -300,112 +304,113 @@ public class WalletServiceImpl implements WalletService {
                                     // To track real money amount for accounting
                                     BigDecimal totalTakenFromBonus = BigDecimal.ZERO;
 
-                                    // 2️⃣ Debit Welcome Bonus
-                                    if (remaining.compareTo(BigDecimal.ZERO) > 0 &&
-                                            wallet.getAvailableWelcomeBonus().compareTo(BigDecimal.ZERO) > 0) {
+                                                // 2️⃣ Debit Welcome Bonus
+                                                if (remaining.compareTo(BigDecimal.ZERO) > 0 &&
+                                                        dbWallet.getAvailableWelcomeBonus().compareTo(BigDecimal.ZERO) > 0) {
 
-                                        usedFromWelcome = wallet.getAvailableWelcomeBonus().min(remaining);
-                                        wallet.setAvailableWelcomeBonus(wallet.getAvailableWelcomeBonus().subtract(usedFromWelcome));
-                                        wallet.setWelcomeBonus(wallet.getWelcomeBonus().subtract(usedFromWelcome));
-                                        remaining = remaining.subtract(usedFromWelcome);
-                                        totalTakenFromBonus = totalTakenFromBonus.add(usedFromWelcome);
-                                        lastPaymentFrom += "WELCOME_BONUS/" + usedFromWelcome.toPlainString();
-                                    }
+                                                    usedFromWelcome = dbWallet.getAvailableWelcomeBonus().min(remaining);
+                                                    dbWallet.setAvailableWelcomeBonus(dbWallet.getAvailableWelcomeBonus().subtract(usedFromWelcome));
+                                                    dbWallet.setWelcomeBonus(dbWallet.getWelcomeBonus().subtract(usedFromWelcome));
+                                                    remaining = remaining.subtract(usedFromWelcome);
+                                                    totalTakenFromBonus = totalTakenFromBonus.add(usedFromWelcome);
+                                                    lastPaymentFrom += "WELCOME_BONUS/" + usedFromWelcome.toPlainString();
+                                                }
 
-                                    // 3️⃣ Debit Referral Bonus
-                                    if (remaining.compareTo(BigDecimal.ZERO) > 0 &&
-                                            wallet.getAvailableReferralBonus().compareTo(BigDecimal.ZERO) > 0) {
+                                                // 3️⃣ Debit Referral Bonus
+                                                if (remaining.compareTo(BigDecimal.ZERO) > 0 &&
+                                                        dbWallet.getAvailableReferralBonus().compareTo(BigDecimal.ZERO) > 0) {
 
-                                        usedFromReferral = wallet.getAvailableReferralBonus().min(remaining);
-                                        wallet.setAvailableReferralBonus(wallet.getAvailableReferralBonus().subtract(usedFromReferral));
-                                        wallet.setReferralBonus(wallet.getReferralBonus().subtract(usedFromReferral));
-                                        remaining = remaining.subtract(usedFromReferral);
-                                        totalTakenFromBonus = totalTakenFromBonus.add(usedFromReferral);
-                                        lastPaymentFrom += "*REFERRAL_BONUS/" + usedFromReferral.toPlainString();
-                                    }
+                                                    usedFromReferral = dbWallet.getAvailableReferralBonus().min(remaining);
+                                                    dbWallet.setAvailableReferralBonus(dbWallet.getAvailableReferralBonus().subtract(usedFromReferral));
+                                                    dbWallet.setReferralBonus(dbWallet.getReferralBonus().subtract(usedFromReferral));
+                                                    remaining = remaining.subtract(usedFromReferral);
+                                                    totalTakenFromBonus = totalTakenFromBonus.add(usedFromReferral);
+                                                    lastPaymentFrom += "*REFERRAL_BONUS/" + usedFromReferral.toPlainString();
+                                                }
 
-                                    // 4️⃣ Debit Promotional Bonus
-                                    if (remaining.compareTo(BigDecimal.ZERO) > 0 &&
-                                            wallet.getPromotionalBonus().compareTo(BigDecimal.ZERO) > 0) {
+                                                // 4️⃣ Debit Promotional Bonus
+                                                if (remaining.compareTo(BigDecimal.ZERO) > 0 &&
+                                                        dbWallet.getPromotionalBonus().compareTo(BigDecimal.ZERO) > 0) {
 
-                                        usedFromPromotional = wallet.getPromotionalBonus().min(remaining);
-                                        wallet.setPromotionalBonus(wallet.getPromotionalBonus().subtract(usedFromPromotional));
-                                        remaining = remaining.subtract(usedFromPromotional);
-                                        totalTakenFromBonus = totalTakenFromBonus.add(usedFromPromotional);
-                                        lastPaymentFrom += "*PROMOTIONAL_BONUS/" + usedFromPromotional.toPlainString();
-                                    }
+                                                    usedFromPromotional = dbWallet.getPromotionalBonus().min(remaining);
+                                                    dbWallet.setPromotionalBonus(dbWallet.getPromotionalBonus().subtract(usedFromPromotional));
+                                                    remaining = remaining.subtract(usedFromPromotional);
+                                                    totalTakenFromBonus = totalTakenFromBonus.add(usedFromPromotional);
+                                                    lastPaymentFrom += "*PROMOTIONAL_BONUS/" + usedFromPromotional.toPlainString();
+                                                }
 
-                                    // 5️⃣ Debit Locked Amount
-                                    if (remaining.compareTo(BigDecimal.ZERO) > 0 &&
-                                            wallet.getLockedAmount().compareTo(BigDecimal.ZERO) > 0) {
+                                                // 5️⃣ Debit Locked Amount
+                                                if (remaining.compareTo(BigDecimal.ZERO) > 0 &&
+                                                        dbWallet.getLockedAmount().compareTo(BigDecimal.ZERO) > 0) {
 
-                                        usedFromLocked = wallet.getLockedAmount().min(remaining);
-                                        wallet.setLockedAmount(wallet.getLockedAmount().subtract(usedFromLocked));
-                                        remaining = remaining.subtract(usedFromLocked);
-                                        lastPaymentFrom += "*LOCKED_AMOUNT/" + usedFromLocked.toPlainString();
-                                    }
+                                                    usedFromLocked = dbWallet.getLockedAmount().min(remaining);
+                                                    dbWallet.setLockedAmount(dbWallet.getLockedAmount().subtract(usedFromLocked));
+                                                    remaining = remaining.subtract(usedFromLocked);
+                                                    lastPaymentFrom += "*LOCKED_AMOUNT/" + usedFromLocked.toPlainString();
+                                                }
 
-                                    // 6️⃣ Debit Deposit bonus
-                                    if (remaining.compareTo(BigDecimal.ZERO) > 0 &&
-                                            wallet.getDepositBonus().compareTo(BigDecimal.ZERO) > 0) {
+                                                // 6️⃣ Debit Deposit bonus
+                                                if (remaining.compareTo(BigDecimal.ZERO) > 0 &&
+                                                        dbWallet.getDepositBonus().compareTo(BigDecimal.ZERO) > 0) {
 
-                                        usedFromDeposit = wallet.getDepositBonus().min(remaining);
-                                        wallet.setDepositBonus(wallet.getDepositBonus().subtract(usedFromDeposit));
-                                        remaining = remaining.subtract(usedFromDeposit);
-                                        totalTakenFromBonus = totalTakenFromBonus.add(usedFromDeposit);
-                                        lastPaymentFrom += "*DEPOSIT_BONUS/" + usedFromDeposit.toPlainString();
-                                    }
+                                                    usedFromDeposit = dbWallet.getDepositBonus().min(remaining);
+                                                    dbWallet.setDepositBonus(dbWallet.getDepositBonus().subtract(usedFromDeposit));
+                                                    remaining = remaining.subtract(usedFromDeposit);
+                                                    totalTakenFromBonus = totalTakenFromBonus.add(usedFromDeposit);
+                                                    lastPaymentFrom += "*DEPOSIT_BONUS/" + usedFromDeposit.toPlainString();
+                                                }
 
-                                    wallet.setLastPaymentFrom(lastPaymentFrom.startsWith("*") ?
-                                            lastPaymentFrom.substring(1) : lastPaymentFrom);
+                                                dbWallet.setLastPaymentFrom(lastPaymentFrom.startsWith("*") ?
+                                                        lastPaymentFrom.substring(1) : lastPaymentFrom);
 
-                                    // 7️⃣ Deduct full amount from totalAvailableBalance
-                                    wallet.setTotalAvailableBalance(wallet.getTotalAvailableBalance().subtract(amount));
+                                                // 7️⃣ Deduct full amount from totalAvailableBalance
+                                                dbWallet.setTotalAvailableBalance(dbWallet.getTotalAvailableBalance().subtract(amount));
 
-                                    // Update availableToWithdraw
-                                    BigDecimal availableToWithdraw = wallet.getTotalAvailableBalance()
-                                            .subtract(wallet.getAvailableWelcomeBonus())
-                                            .subtract(wallet.getAvailableReferralBonus())
-                                            .subtract(wallet.getLockedAmount())
-                                            .subtract(wallet.getDepositBonus())
-                                            .subtract(wallet.getPromotionalBonus());
+                                                // Update availableToWithdraw
+                                                BigDecimal availableToWithdraw = dbWallet.getTotalAvailableBalance()
+                                                        .subtract(dbWallet.getAvailableWelcomeBonus())
+                                                        .subtract(dbWallet.getAvailableReferralBonus())
+                                                        .subtract(dbWallet.getLockedAmount())
+                                                        .subtract(dbWallet.getDepositBonus())
+                                                        .subtract(dbWallet.getPromotionalBonus());
 
-                                    wallet.setAvailableToWithdraw(availableToWithdraw);
+                                                dbWallet.setAvailableToWithdraw(availableToWithdraw);
 
-                                    log.info(
-                                            "Debit complete for wallet {}: welcome={}, referral={}, locked={}, deposit={}",
-                                            wallet.getId(),
-                                            usedFromWelcome, usedFromReferral, usedFromLocked, usedFromDeposit
-                                    );
+                                                log.info(
+                                                        "Debit complete for wallet {}: welcome={}, referral={}, locked={}, deposit={}",
+                                                        dbWallet.getId(),
+                                                        usedFromWelcome, usedFromReferral, usedFromLocked, usedFromDeposit
+                                                );
 
-                                    Mono<WalletDto> savedWalletMono = walletRepository.save(wallet)
-                                            .map(WalletMapper::toDto);
+                                                Mono<WalletDto> savedWalletMono = walletRepository.save(dbWallet)
+                                                        .map(WalletMapper::toDto);
 
-                                    final BigDecimal realMoneyAmount = amount.subtract(totalTakenFromBonus);
+                                                final BigDecimal realMoneyAmount = amount.subtract(totalTakenFromBonus);
 
-                                    if (realMoneyAmount.compareTo(BigDecimal.ZERO) > 0) {
-                                        return savedWalletMono.flatMap(dto ->
+                                                if (realMoneyAmount.compareTo(BigDecimal.ZERO) > 0) {
+                                                    return savedWalletMono.flatMap(dto ->
 
-                                                // 8️⃣ Update Bingo Game Metrics for accounting purposes
-                                                bingoGameMetricsRedisService.addRealMoneyAmount(gameId, realMoneyAmount)
-                                                        .doOnNext(updatedMetrics ->
-                                                                log.info("Updated bingo game metrics after bonus debit: {}", updatedMetrics)
-                                                        )
-                                                        .thenReturn(dto)
-                                        );
-                                    }
+                                                            // 8️⃣ Update Bingo Game Metrics for accounting purposes
+                                                            bingoGameMetricsRedisService.addRealMoneyAmount(gameId, realMoneyAmount)
+                                                                    .doOnNext(updatedMetrics ->
+                                                                            log.info("Updated bingo game metrics after bonus debit: {}", updatedMetrics)
+                                                                    )
+                                                                    .thenReturn(dto)
+                                                    );
+                                                }
 
-                                    return savedWalletMono;
-                                }
+                                                return savedWalletMono;
+                                            }
 
-                                // Other transaction types
-                                return Mono.just(WalletMapper.toDto(wallet));
+                                            // Other transaction types
+                                            return Mono.just(WalletMapper.toDto(dbWallet));
+                                        })
+                                );
                             })
-                    );
-                })
-                .onErrorMap(e -> {
-                    log.error("Error debiting wallet", e);
-                    return new RuntimeException("Failed to debit wallet", e);
+                            .onErrorMap(e -> {
+                                log.error("Error debiting wallet", e);
+                                return new RuntimeException("Failed to debit wallet", e);
+                            });
                 });
     }
 
@@ -413,40 +418,44 @@ public class WalletServiceImpl implements WalletService {
     public Mono<WalletDto> credit(Wallet wallet, BigDecimal amount, GameTxnType gameTxnType, Long gameId) {
         log.info("Crediting wallet with id: {} for amount: {} and txnType: {}", wallet.getId(), amount, gameTxnType);
 
-        // 🧹 Step 1: Evict wallet cache by userId
-        String walletCacheKey = CacheKeyUtil.getWalletByUserProfileIdAndAgentIdKey(wallet.getUserProfileId(), wallet.getAgentId());
-        Mono<Boolean> evictByUserId = cacheService.evict(walletCacheKey);
+        // Fetch wallet fresh from DB to ensure R2DBC tracks it as existing entity
+        return walletRepository.findById(wallet.getId())
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("Wallet not found with id: " + wallet.getId())))
+                .flatMap(dbWallet -> {
+                    // 🧹 Step 1: Evict wallet cache by userId
+                    String walletCacheKey = CacheKeyUtil.getWalletByUserProfileIdAndAgentIdKey(dbWallet.getUserProfileId(), dbWallet.getAgentId());
+                    Mono<Boolean> evictByUserId = cacheService.evict(walletCacheKey);
 
-        // Step 2: Fetch user profile to evict Telegram-based cache too
-        Mono<UserProfileDto> userProfileMono = userProfileService.getUserProfileById(wallet.getUserProfileId());
+                    // Step 2: Fetch user profile to evict Telegram-based cache too
+                    Mono<UserProfileDto> userProfileMono = userProfileService.getUserProfileById(dbWallet.getUserProfileId());
 
-        return evictByUserId
-                .then(userProfileMono)
-                .flatMap(userProfile -> {
-                    String walletCacheKeyByTelegram = CacheKeyUtil.getWalletByTelegramIdKey(userProfile.getTelegramId(), wallet.getId());
+                    return evictByUserId
+                            .then(userProfileMono)
+                            .flatMap(userProfile -> {
+                                String walletCacheKeyByTelegram = CacheKeyUtil.getWalletByTelegramIdKey(userProfile.getTelegramId(), dbWallet.getId());
                     Mono<Boolean> evictByTelegram = cacheService.evict(walletCacheKeyByTelegram);
 
                     // Continue only after both evictions
-                    return evictByTelegram.then(
-                            // === Your existing credit logic below ===
-                            Mono.defer(() -> {
-                                if (GameTxnType.REFUND.equals(gameTxnType) || GameTxnType.PRIZE_PAYOUT.equals(gameTxnType)) {
+                                return evictByTelegram.then(
+                                        // === Your existing credit logic below ===
+                                        Mono.defer(() -> {
+                                            if (GameTxnType.REFUND.equals(gameTxnType) || GameTxnType.PRIZE_PAYOUT.equals(gameTxnType)) {
 
-                                    // Recalculate totalAvailableBalance and availableToWithdraw
-                                    BigDecimal totalAvailableBalance = wallet.getTotalAvailableBalance().add(amount);
+                                                // Recalculate totalAvailableBalance and availableToWithdraw
+                                                BigDecimal totalAvailableBalance = dbWallet.getTotalAvailableBalance().add(amount);
 
-                                    if (GameTxnType.PRIZE_PAYOUT.equals(gameTxnType)) {
-                                        wallet.setTotalPrizeAmount(wallet.getTotalPrizeAmount().add(amount));
-                                    }
+                                                if (GameTxnType.PRIZE_PAYOUT.equals(gameTxnType)) {
+                                                    dbWallet.setTotalPrizeAmount(dbWallet.getTotalPrizeAmount().add(amount));
+                                                }
 
-                                    // Track how much of this REFUND is explained by "lastPaymentFrom" sources (bonus/locked/etc).
-                                    // Anything left over is the "real money" portion.
-                                    BigDecimal explainedBySources = BigDecimal.ZERO;
+                                                // Track how much of this REFUND is explained by "lastPaymentFrom" sources (bonus/locked/etc).
+                                                // Anything left over is the "real money" portion.
+                                                BigDecimal explainedBySources = BigDecimal.ZERO;
 
-                                    // Handle REFUND → restore amounts back to their source
-                                    if (GameTxnType.REFUND.equals(gameTxnType)) {
+                                                // Handle REFUND → restore amounts back to their source
+                                                if (GameTxnType.REFUND.equals(gameTxnType)) {
 
-                                        String lastPaymentFrom = wallet.getLastPaymentFrom();
+                                                    String lastPaymentFrom = dbWallet.getLastPaymentFrom();
 
                                         if (lastPaymentFrom != null && !lastPaymentFrom.isBlank()) {
 
@@ -481,57 +490,57 @@ public class WalletServiceImpl implements WalletService {
                                                 // accumulate amounts restored by sources
                                                 explainedBySources = explainedBySources.add(refundAmount);
 
-                                                switch (sourceType) {
-                                                    case "WELCOME_BONUS":
-                                                        wallet.setAvailableWelcomeBonus(wallet.getAvailableWelcomeBonus().add(refundAmount));
-                                                        wallet.setWelcomeBonus(wallet.getWelcomeBonus().add(refundAmount));
-                                                        break;
+                                                                switch (sourceType) {
+                                                                    case "WELCOME_BONUS":
+                                                                        dbWallet.setAvailableWelcomeBonus(dbWallet.getAvailableWelcomeBonus().add(refundAmount));
+                                                                        dbWallet.setWelcomeBonus(dbWallet.getWelcomeBonus().add(refundAmount));
+                                                                        break;
 
-                                                    case "REFERRAL_BONUS":
-                                                        wallet.setAvailableReferralBonus(wallet.getAvailableReferralBonus().add(refundAmount));
-                                                        wallet.setReferralBonus(wallet.getReferralBonus().add(refundAmount));
-                                                        break;
+                                                                    case "REFERRAL_BONUS":
+                                                                        dbWallet.setAvailableReferralBonus(dbWallet.getAvailableReferralBonus().add(refundAmount));
+                                                                        dbWallet.setReferralBonus(dbWallet.getReferralBonus().add(refundAmount));
+                                                                        break;
 
-                                                    case "LOCKED_AMOUNT":
-                                                        wallet.setLockedAmount(wallet.getLockedAmount().add(refundAmount));
-                                                        break;
+                                                                    case "LOCKED_AMOUNT":
+                                                                        dbWallet.setLockedAmount(dbWallet.getLockedAmount().add(refundAmount));
+                                                                        break;
 
-                                                    case "DEPOSIT_BONUS":
-                                                        wallet.setDepositBonus(wallet.getDepositBonus().add(refundAmount));
-                                                        break;
+                                                                    case "DEPOSIT_BONUS":
+                                                                        dbWallet.setDepositBonus(dbWallet.getDepositBonus().add(refundAmount));
+                                                                        break;
 
-                                                    case "PROMOTIONAL_BONUS":
-                                                        wallet.setPromotionalBonus(wallet.getPromotionalBonus().add(refundAmount));
-                                                        break;
+                                                                    case "PROMOTIONAL_BONUS":
+                                                                        dbWallet.setPromotionalBonus(dbWallet.getPromotionalBonus().add(refundAmount));
+                                                                        break;
 
-                                                    default:
-                                                        log.warn("Unknown refund source type: {}", sourceType);
-                                                }
+                                                                    default:
+                                                                        log.warn("Unknown refund source type: {}", sourceType);
+                                                                }
 
                                             }
                                         }
                                     }
 
-                                    BigDecimal availableToWithdraw = totalAvailableBalance
-                                            .subtract(wallet.getAvailableWelcomeBonus())
-                                            .subtract(wallet.getAvailableReferralBonus())
-                                            .subtract(wallet.getDepositBonus())
-                                            .subtract(wallet.getPromotionalBonus())
-                                            .subtract(wallet.getLockedAmount());
+                                                BigDecimal availableToWithdraw = totalAvailableBalance
+                                                        .subtract(dbWallet.getAvailableWelcomeBonus())
+                                                        .subtract(dbWallet.getAvailableReferralBonus())
+                                                        .subtract(dbWallet.getDepositBonus())
+                                                        .subtract(dbWallet.getPromotionalBonus())
+                                                        .subtract(dbWallet.getLockedAmount());
 
-                                    wallet.setTotalAvailableBalance(totalAvailableBalance);
-                                    wallet.setAvailableToWithdraw(availableToWithdraw);
+                                                dbWallet.setTotalAvailableBalance(totalAvailableBalance);
+                                                dbWallet.setAvailableToWithdraw(availableToWithdraw);
 
-                                    log.info("Credit complete for wallet {} (total available balance: {}, available to withdraw: {})",
-                                            wallet.getId(), totalAvailableBalance, availableToWithdraw);
+                                                log.info("Credit complete for wallet {} (total available balance: {}, available to withdraw: {})",
+                                                        dbWallet.getId(), totalAvailableBalance, availableToWithdraw);
 
-                                    // ----- NEW: deduct real-money portion from bingo metrics on REFUND (without changing existing behavior) -----
-                                    // realPortion = amount - explainedBySources, clipped at 0
-                                    final BigDecimal realPortion = GameTxnType.REFUND.equals(gameTxnType)
-                                            ? amount.subtract(explainedBySources).max(BigDecimal.ZERO)
-                                            : BigDecimal.ZERO;
+                                                // ----- NEW: deduct real-money portion from bingo metrics on REFUND (without changing existing behavior) -----
+                                                // realPortion = amount - explainedBySources, clipped at 0
+                                                final BigDecimal realPortion = GameTxnType.REFUND.equals(gameTxnType)
+                                                        ? amount.subtract(explainedBySources).max(BigDecimal.ZERO)
+                                                        : BigDecimal.ZERO;
 
-                                    Mono<WalletDto> savedWalletMono = walletRepository.save(wallet)
+                                                Mono<WalletDto> savedWalletMono = walletRepository.save(dbWallet)
                                             .map(WalletMapper::toDto);
 
                                     // Only apply metrics update if:
@@ -563,6 +572,7 @@ public class WalletServiceImpl implements WalletService {
                 .onErrorMap(e -> {
                     log.error("Error crediting wallet", e);
                     return new RuntimeException("Failed to credit wallet", e);
+                });
                 });
     }
 

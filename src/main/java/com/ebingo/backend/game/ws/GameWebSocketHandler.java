@@ -309,7 +309,7 @@ public class GameWebSocketHandler implements WebSocketHandler {
             case "game.playerLeaveRequest":
                 Long gameEventId4 = (payload.get("gameId") != null) ? Long.valueOf(payload.get("gameId").toString()) : null;
                 String userId4 = (payload.get("playerId") != null) ? payload.get("playerId").toString() : null;
-                return gameService.leaveGame(roomId, gameEventId4, userId4, agentId);
+                return gameService.leaveGame(roomId, gameEventId4, userId4, agentId, ParticipantType.REAL);
 
             case "card.markNumberRequest":
                 Long gameEventId5 = (payload.get("gameId") != null) ? Long.valueOf(payload.get("gameId").toString()) : null;

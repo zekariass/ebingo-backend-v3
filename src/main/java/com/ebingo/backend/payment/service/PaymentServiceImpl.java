@@ -1,5 +1,6 @@
 package com.ebingo.backend.payment.service;
 
+import com.ebingo.backend.game.enums.ParticipantType;
 import com.ebingo.backend.payment.enums.GameTxnType;
 import com.ebingo.backend.payment.repository.WalletRepository;
 import com.ebingo.backend.system.exceptions.ResourceNotFoundException;
@@ -29,7 +30,11 @@ public class PaymentServiceImpl implements PaymentService {
 
 
     @Override
-    public Mono<Boolean> processPayment(Long telegramId, BigDecimal amount, Long gameId, Long agentId) {
+    public Mono<Boolean> processPayment(Long telegramId, BigDecimal amount, Long gameId, Long agentId, ParticipantType participantType) {
+        if (ParticipantType.BOT.equals(participantType)) {
+//            log.info("Skipping payment processing for bot participant with telegramId={}, gameId={}, agentId={}", telegramId, gameId, agentId);
+            return Mono.just(true); // Bots are not charged
+        }
         return userProfileService.getUserProfileByTelegramIdAndAgentId(telegramId, agentId)
                 .switchIfEmpty(Mono.error(new ResourceNotFoundException("User profile not found")))
                 .flatMap(userProfile -> gameTxnService.createGameTransaction(
@@ -49,8 +54,12 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     @Override
-    public Mono<Boolean> processRefund(Long telegramId, Long gameId, Long agentId) {
-        log.info("Processing refund for telegramId={}, gameId={} agentId={}", telegramId, gameId, agentId);
+    public Mono<Boolean> processRefund(Long telegramId, Long gameId, Long agentId, ParticipantType participantType) {
+        if (ParticipantType.BOT.equals(participantType)) {
+//            log.info("Skipping refund processing for bot participant with telegramId={}, gameId={}, agentId={}", telegramId, gameId, agentId);
+            return Mono.just(true); // Bots are not refunded
+        }
+//        log.info("Processing refund for telegramId={}, gameId={} agentId={}", telegramId, gameId, agentId);
         return userProfileService.getUserProfileByTelegramIdAndAgentId(telegramId, agentId)
                 .switchIfEmpty(Mono.error(new ResourceNotFoundException("User profile not found")))
                 .flatMap(userProfile -> {

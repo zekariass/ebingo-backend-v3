@@ -61,7 +61,7 @@ public class AgentController {
             @Parameter(required = true, description = "Agent ID") @PathVariable Long agentId
     ) {
 
-        log.info("=====================>>>>>: Fetching agent with ID: {}", agentId);
+//        log.info("=====================>>>>>: Fetching agent with ID: {}", agentId);
         return agentService.getAgentById(agentId)
                 .map(agent -> ApiResponse.<AgentDto>builder()
                         .statusCode(200)

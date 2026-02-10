@@ -83,15 +83,15 @@ public class UserProfileServiceImpl implements UserProfileService {
     @Override
     public Mono<UserProfileDto> getUserProfileById(Long receiverId) {
 
-        log.info(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>: Fetching user profile: {}", receiverId);
+//        log.info(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>: Fetching user profile: {}", receiverId);
 
         String userProfileKey = CacheKeyUtil.getUserProfileByIdKey(receiverId);
 
         Mono<UserProfileDto> userProfile = userProfileRepository.findById(receiverId)
                 .map(UserProfileMapper::toDto)
                 .switchIfEmpty(Mono.error(new ResourceNotFoundException("User not found")))
-                .doOnSubscribe(s -> log.info("Fetching user profile: {}", receiverId))
-                .doOnSuccess(dto -> log.info("Completed fetching user profile: {}", receiverId))
+//                .doOnSubscribe(s -> log.info("Fetching user profile: {}", receiverId))
+//                .doOnSuccess(dto -> log.info("Completed fetching user profile: {}", receiverId))
                 .doOnError(e -> log.error("Failed to fetch user profile: {}", e.getMessage(), e));
 
         return cacheService.cacheMono(

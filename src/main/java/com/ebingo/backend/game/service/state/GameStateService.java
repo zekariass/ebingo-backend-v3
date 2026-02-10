@@ -66,9 +66,9 @@ public class GameStateService {
     public void cleanUpGameStatesOnStartup() {
         roomRepository.findAll()
                 .flatMap(room -> deleteGameState(room.getId(), room.getAgentId()))
-                .doOnNext(result -> log.info("Deleted game state result: {}", result))
+//                .doOnNext(result -> log.info("Deleted game state result: {}", result))
                 .doOnError(e -> log.error("Cleanup failed", e))
-                .doOnComplete(() -> log.info("Cleanup complete"))
+//                .doOnComplete(() -> log.info("Cleanup complete"))
                 .subscribe();
     }
 
@@ -236,7 +236,7 @@ public class GameStateService {
 
         return roomRepository.findById(roomId)
                 .flatMap(room -> {
-                    log.info("TotalCommission rate: {}", room.getCommissionRate());
+//                    log.info("TotalCommission rate: {}", room.getCommissionRate());
 //                    log.info("ROOM: {}", room);
                     gameState.setCommissionRate(
                             room.getCommissionRate().doubleValue()
@@ -374,7 +374,7 @@ public class GameStateService {
                     state.setCommissionRate(gameMeta.get("commissionRate") != null ? Double.parseDouble(gameMeta.get("commissionRate").toString()) : 0.0);
                     state.setCapacity(gameMeta.get("capacity") != null ? Integer.parseInt(gameMeta.get("capacity").toString()) : 0);
                     state.setAgentId(gameMeta.get("agentId") != null ? Long.parseLong(gameMeta.get("agentId").toString()) : null);
-                    
+
                     Object statusUpdatedAtRaw = gameMeta.get("statusUpdatedAt");
                     if (statusUpdatedAtRaw != null) {
                         state.setStatusUpdatedAt(Instant.parse(statusUpdatedAtRaw.toString()));
@@ -458,8 +458,8 @@ public class GameStateService {
 
                             .onErrorReturn(false);
                 })
-                .defaultIfEmpty(false) // ensures that if getGameState is empty, Mono emits false
-                .doOnSuccess(deleted -> log.info("Deleted game state for roomId={} -> {}", roomId, deleted));
+                .defaultIfEmpty(false); // ensures that if getGameState is empty, Mono emits false
+//                .doOnSuccess(deleted -> log.info("Deleted game state for roomId={} -> {}", roomId, deleted));
     }
 
 

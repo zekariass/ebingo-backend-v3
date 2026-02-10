@@ -152,7 +152,7 @@ public class GameService {
 
                                     if (!failed.isEmpty()) {
                                         String firstError = failed.getFirst().getValue();
-                                        log.warn("Card claim failed for user {} in game {}: {}", userId, gameId, firstError);
+//                                        log.warn("Card claim failed for user {} in game {}: {}", userId, gameId, firstError);
 
                                         // Notify user about the error via WebSocket
                                         return publisher.publishUserEvent(userId, Map.of(
@@ -171,8 +171,8 @@ public class GameService {
                                     }
 
                                     // 2️⃣ All claims succeeded → Process payment
-                                    log.info("All cards claimed successfully for user {} in game {}. Proceeding with payment...", userId, gameId);
-                                    return paymentService.processPayment(Long.parseLong(userId), entryFee, gameId, agentId)
+//                                    log.info("All cards claimed successfully for user {} in game {}. Proceeding with payment...", userId, gameId);
+                                    return paymentService.processPayment(Long.parseLong(userId), entryFee, gameId, agentId, participantType)
                                             .flatMap(paymentSuccess -> {
                                                 if (!paymentSuccess) {
                                                     log.warn("Payment failed for user {} in game {}", userId, gameId);
@@ -202,9 +202,9 @@ public class GameService {
 
                                                 // ✅ Payment success → complete join
                                                 paymentCompleted.set(true);
-                                                log.info("Payment successful for user {} in game {}", userId, gameId);
+//                                                log.info("Payment successful for user {} in game {}", userId, gameId);
 
-                                                Boolean isBot = ParticipantType.BOT.equals(participantType);
+                                                boolean isBot = ParticipantType.BOT.equals(participantType);
 
                                                 // Store cardIds to participant type mapping in redis to identify card owner type
 //                                                return afterSuccessfulJoin(roomId, gameId, userId, capacity, selectedCardIds, agentId);
@@ -216,7 +216,7 @@ public class GameService {
                                                 log.error("Unexpected error during payment for user {}: {}", userId, error.getMessage(), error);
 
                                                 if (paymentCompleted.get()) {
-                                                    return paymentService.processRefund(Long.parseLong(userId), gameId, agentId)
+                                                    return paymentService.processRefund(Long.parseLong(userId), gameId, agentId, participantType)
                                                             .onErrorResume(refundErr -> {
                                                                 log.error("Refund failed for user {}: {}", userId, refundErr.getMessage(), refundErr);
                                                                 return Mono.empty();
@@ -363,7 +363,7 @@ public class GameService {
             Long agentId,
             boolean isBot
     ) {
-        log.info("afterSuccessfulJoin: user {} joined game {}", userId, gameId);
+//        log.info("afterSuccessfulJoin: user {} joined game {}", userId, gameId);
 
         final int cardsCount = selectedCardIds != null ? selectedCardIds.size() : 0;
         if (cardsCount == 0) {
@@ -486,7 +486,7 @@ public class GameService {
                         return Mono.empty();
                     }
 
-                    log.info("Starting countdown for game {}", gameId);
+//                    log.info("Starting countdown for game {}", gameId);
                     String countdownLockKey = RedisKeys.countdownLockKey(gameId);
 
                     // Lua script with TTL (EX seconds)
@@ -518,7 +518,7 @@ public class GameService {
                                                             .then(Mono.error(err))
                                             );
                                 } else {
-                                    log.info("Countdown already started for game {}", gameId);
+//                                    log.info("Countdown already started for game {}", gameId);
                                     return Mono.empty();
                                 }
                             })
@@ -531,7 +531,7 @@ public class GameService {
     }
 
 
-    public Mono<Void> leaveGame(Long roomId, Long gameId, String userId, Long agentId) {
+    public Mono<Void> leaveGame(Long roomId, Long gameId, String userId, Long agentId, ParticipantType participantType) {
         System.out.println("User " + userId + " is leaving game " + gameId);
         return gameStateService.getGameState(roomId, agentId)
                 .flatMap(state -> {
@@ -643,7 +643,7 @@ public class GameService {
                                 log.info("User {} successfully removed from game {}", userId, gameId);
 
                                 // Refund payment
-                                Mono<Boolean> refund = paymentService.processRefund(Long.parseLong(userId), gameId, agentId)
+                                Mono<Boolean> refund = paymentService.processRefund(Long.parseLong(userId), gameId, agentId, participantType)
                                         .doOnNext(refunded -> log.info("Refund {} for user {} in game {}",
                                                 refunded ? "succeeded" : "failed", userId, gameId));
 
@@ -1383,7 +1383,7 @@ public class GameService {
 
         Long roomId = state.getRoomId();
 
-        log.info("===================================>>> Game End Broadcast: {}", responseObject);
+//        log.info("===================================>>> Game End Broadcast: {}", responseObject);
 
         // Fully reactive: delete Redis state, then publish the event
         return gameStateService.deleteGameState(roomId, agentId)
@@ -1755,9 +1755,9 @@ public class GameService {
     public Mono<Integer> getMinPlayersToStart(Long roomId) {
         return roomRepository.findById(roomId)
                 .map(Room::getMinPlayers)
-                .onErrorMap(e -> new RuntimeException("Error getting room by id: " + roomId, e))
-                .doOnSubscribe(s -> log.info("Getting min players to start for room: {}", roomId))
-                .doOnSuccess(id -> log.info("Got min players to start for room: {}", roomId));
+                .onErrorMap(e -> new RuntimeException("Error getting room by id: " + roomId, e));
+//                .doOnSubscribe(s -> log.info("Getting min players to start for room: {}", roomId));
+//                .doOnSuccess(id -> log.info("Got min players to start for room: {}", roomId));
     }
 
     public Mono<Void> getCard(Long roomId, String cardId3, String userId) {
