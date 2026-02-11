@@ -111,8 +111,6 @@ public class GameService {
     public Mono<Void> playerJoin(Long roomId, Long gameId_, String userId, Integer capacity,
                                  BigDecimal entryFee, List<String> selectedCardIds, Long agentId, ParticipantType participantType) {
 
-//        log.info("USER {} SELECTED CARDS FOR ROOM {} ===== {}", userId, roomId, selectedCardIds);
-
         AtomicBoolean paymentCompleted = new AtomicBoolean(false);
 
         Mono<GameState> gameState = gameStateService.getOrInitializeGame(roomId, userId, capacity, agentId);
@@ -209,7 +207,7 @@ public class GameService {
                                                 // Store cardIds to participant type mapping in redis to identify card owner type
 //                                                return afterSuccessfulJoin(roomId, gameId, userId, capacity, selectedCardIds, agentId);
                                                 return participantTypeStore.putCards(gameId, selectedCardIds, participantType)
-                                                        .then(participantTypeStore.expire(gameId, Duration.ofHours(3)))
+                                                        .then(participantTypeStore.expire(gameId, Duration.ofHours(1)))
                                                         .then(afterSuccessfulJoin(roomId, gameId, userId, capacity, selectedCardIds, agentId, isBot));
                                             })
                                             .onErrorResume(error -> {

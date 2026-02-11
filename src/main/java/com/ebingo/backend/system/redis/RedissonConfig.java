@@ -70,10 +70,16 @@ public class RedissonConfig {
         Config config = new Config();
         config.useSingleServer()
                 .setAddress("redis://" + redisHost + ":" + redisPort)
-                .setConnectionMinimumIdleSize(8)
-                .setConnectionPoolSize(32)
-                .setSubscriptionConnectionPoolSize(16)
-                .setIdleConnectionTimeout(10000)
+//                .setConnectionMinimumIdleSize(8)
+//                .setConnectionPoolSize(32)
+//                .setSubscriptionConnectionPoolSize(16)
+//                .setIdleConnectionTimeout(10000)
+//                .setConnectTimeout(3000)
+//                .setTimeout(10000);
+                .setConnectionMinimumIdleSize(12)
+                .setConnectionPoolSize(48)
+                .setSubscriptionConnectionPoolSize(24)
+                .setIdleConnectionTimeout(30000)
                 .setConnectTimeout(3000)
                 .setTimeout(10000);
 

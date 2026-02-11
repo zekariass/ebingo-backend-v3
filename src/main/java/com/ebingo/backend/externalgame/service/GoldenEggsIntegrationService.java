@@ -229,7 +229,7 @@ public class GoldenEggsIntegrationService {
                 .map(saved -> {
                     // Generate token parameter for subId validation using HMAC-SHA256
                     // token = HMAC-SHA256(aggregatorId:subId, operatorSecretKey)
-                    String subId = request.getBrandName() != null ? request.getBrandName() : "";
+                    String subId = request.getSubId() != null ? request.getSubId() : "";
                     String validationToken = generateSubIdValidationToken(config.getAggregatorId(), subId);
 
                     // URL-encode lobbyUrl since it may contain query parameters

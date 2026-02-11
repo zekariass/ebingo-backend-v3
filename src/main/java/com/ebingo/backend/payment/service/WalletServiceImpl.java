@@ -145,17 +145,25 @@ public class WalletServiceImpl implements WalletService {
 //    @Override
 //    public Mono<WalletDto> getWalletByUserProfileId(Long userProfileId) {
 //
-//        String walletCacheKey = CacheKeyUtil.getWalletByUserProfileIdAndAgentIdKey(userProfileId);
+//        return walletRepository.findByUserProfileId(userProfileId)
+//                .doOnSubscribe(s ->
+//                        log.info("Getting wallet by user profile id: {}", userProfileId)
+//                )
+//                .flatMap(wallet -> {
+//                    String cacheKey =
+//                            CacheKeyUtil.getWalletByUserProfileIdAndAgentIdKey(
+//                                    userProfileId,
+//                                    wallet.getAgentId()
+//                            );
 //
-//        Mono<WalletDto> walletMono = walletRepository.findByUserProfileId(userProfileId)
-//                .doOnSubscribe(s -> log.info("Getting wallet by user profile id: {}", userProfileId))
-//                .map(WalletMapper::toDto);
+//                    WalletDto dto = WalletMapper.toDto(wallet);
 //
-//        return cacheService.cacheMono(
-//                walletCacheKey,
-//                walletMono,
-//                WalletDto.class
-//        );
+//                    return cacheService.cacheMono(
+//                            cacheKey,
+//                            Mono.just(dto),
+//                            WalletDto.class
+//                    );
+//                });
 //    }
 
     @Override
@@ -165,21 +173,7 @@ public class WalletServiceImpl implements WalletService {
                 .doOnSubscribe(s ->
                         log.info("Getting wallet by user profile id: {}", userProfileId)
                 )
-                .flatMap(wallet -> {
-                    String cacheKey =
-                            CacheKeyUtil.getWalletByUserProfileIdAndAgentIdKey(
-                                    userProfileId,
-                                    wallet.getAgentId()
-                            );
-
-                    WalletDto dto = WalletMapper.toDto(wallet);
-
-                    return cacheService.cacheMono(
-                            cacheKey,
-                            Mono.just(dto),
-                            WalletDto.class
-                    );
-                });
+                .map(WalletMapper::toDto);
     }
 
 
@@ -215,44 +209,94 @@ public class WalletServiceImpl implements WalletService {
 //    }
 
 
+//    @Override
+//    public Mono<WalletDto> getWalletByTelegramId(Long telegramId, Long agentId) {
+//        log.info("Getting wallet by user telegram id: {}", telegramId);
+//
+//        String walletCacheKey = CacheKeyUtil.getWalletByTelegramIdKey(telegramId, agentId);
+//
+//        Mono<WalletDto> walletMono = userProfileService.getUserProfileByTelegramIdAndAgentId(telegramId, agentId)
+//                .flatMap(up -> walletRepository.findByUserProfileId(up.getId()))
+//                .switchIfEmpty(Mono.error(new ResourceNotFoundException(
+//                        "Wallet not found for user with telegram id: " + telegramId)))
+//                .map(WalletMapper::toDto);
+//
+//        return cacheService.cacheMono(
+//                walletCacheKey,
+//                walletMono,
+//                WalletDto.class
+//        );
+//    }
+
     @Override
     public Mono<WalletDto> getWalletByTelegramId(Long telegramId, Long agentId) {
-        log.info("Getting wallet by user telegram id: {}", telegramId);
-
-        String walletCacheKey = CacheKeyUtil.getWalletByTelegramIdKey(telegramId, agentId);
-
-        Mono<WalletDto> walletMono = userProfileService.getUserProfileByTelegramIdAndAgentId(telegramId, agentId)
+        return userProfileService.getUserProfileByTelegramIdAndAgentId(telegramId, agentId)
                 .flatMap(up -> walletRepository.findByUserProfileId(up.getId()))
                 .switchIfEmpty(Mono.error(new ResourceNotFoundException(
                         "Wallet not found for user with telegram id: " + telegramId)))
                 .map(WalletMapper::toDto);
-
-        return cacheService.cacheMono(
-                walletCacheKey,
-                walletMono,
-                WalletDto.class
-        );
     }
 
+
+//    @Override
+//    public Mono<WalletDto> saveWallet(Wallet wallet, Long agentId) {
+//        log.info("Saving wallet with id: {}", wallet.getId());
+//
+//        String walletCacheKey = CacheKeyUtil.getWalletByUserProfileIdAndAgentIdKey(wallet.getUserProfileId(), agentId);
+//        Mono<Boolean> evictByUserId = cacheService.evict(walletCacheKey);
+//
+//        Mono<UserProfileDto> userProfileMono = userProfileService.getUserProfileById(wallet.getUserProfileId());
+//
+//        return evictByUserId
+//                .then(userProfileMono)
+//                .flatMap(userProfile -> {
+//                    String walletCacheKeyByTelegram = CacheKeyUtil.getWalletByTelegramIdKey(userProfile.getTelegramId(), userProfile.getAgentId());
+//
+//                    Mono<Boolean> evictByTelegram = cacheService.evict(walletCacheKeyByTelegram);
+//
+//                    return evictByTelegram
+//                            .then(walletRepository.save(wallet))
+//                            .doOnSuccess(saved -> log.info("Wallet saved with id: {}", saved.getId()))
+//                            .map(WalletMapper::toDto);
+//                })
+//                .onErrorMap(e -> {
+//                    log.error("Error saving wallet", e);
+//                    return new RuntimeException("Failed to save wallet", e);
+//                });
+//    }
 
     @Override
     public Mono<WalletDto> saveWallet(Wallet wallet, Long agentId) {
         log.info("Saving wallet with id: {}", wallet.getId());
 
-        String walletCacheKey = CacheKeyUtil.getWalletByUserProfileIdAndAgentIdKey(wallet.getUserProfileId(), agentId);
-        Mono<Boolean> evictByUserId = cacheService.evict(walletCacheKey);
+        // Fetch wallet fresh from DB to ensure R2DBC tracks it as existing entity
+        return walletRepository.findById(wallet.getId())
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("Wallet not found with id: " + wallet.getId())))
+                .flatMap(dbWallet -> {
+                    // Copy all fields from the passed wallet to the DB-fetched wallet
+                    dbWallet.setWelcomeBonus(wallet.getWelcomeBonus());
+                    dbWallet.setAvailableWelcomeBonus(wallet.getAvailableWelcomeBonus());
+                    dbWallet.setReferralBonus(wallet.getReferralBonus());
+                    dbWallet.setAvailableReferralBonus(wallet.getAvailableReferralBonus());
+                    dbWallet.setTotalPrizeAmount(wallet.getTotalPrizeAmount());
+                    dbWallet.setPendingWithdrawal(wallet.getPendingWithdrawal());
+                    dbWallet.setTotalAvailableBalance(wallet.getTotalAvailableBalance());
+                    dbWallet.setAvailableToWithdraw(wallet.getAvailableToWithdraw());
+                    dbWallet.setLockedAmount(wallet.getLockedAmount());
+                    dbWallet.setDepositBonus(wallet.getDepositBonus());
+                    dbWallet.setPromotionalBonus(wallet.getPromotionalBonus());
+                    dbWallet.setLastPaymentFrom(wallet.getLastPaymentFrom());
+                    // Note: version is managed by R2DBC for optimistic locking
 
-        Mono<UserProfileDto> userProfileMono = userProfileService.getUserProfileById(wallet.getUserProfileId());
-
-        return evictByUserId
-                .then(userProfileMono)
-                .flatMap(userProfile -> {
-                    String walletCacheKeyByTelegram = CacheKeyUtil.getWalletByTelegramIdKey(userProfile.getTelegramId(), userProfile.getAgentId());
-
-                    Mono<Boolean> evictByTelegram = cacheService.evict(walletCacheKeyByTelegram);
-
-                    return evictByTelegram
-                            .then(walletRepository.save(wallet))
+                    // Evict cache
+                    String walletCacheKey = CacheKeyUtil.getWalletByUserProfileIdAndAgentIdKey(dbWallet.getUserProfileId(), agentId);
+                    return cacheService.evict(walletCacheKey)
+                            .then(userProfileService.getUserProfileById(dbWallet.getUserProfileId()))
+                            .flatMap(userProfile -> {
+                                String walletCacheKeyByTelegram = CacheKeyUtil.getWalletByTelegramIdKey(userProfile.getTelegramId(), agentId);
+                                return cacheService.evict(walletCacheKeyByTelegram)
+                                        .then(walletRepository.save(dbWallet));
+                            })
                             .doOnSuccess(saved -> log.info("Wallet saved with id: {}", saved.getId()))
                             .map(WalletMapper::toDto);
                 })
@@ -288,21 +332,21 @@ public class WalletServiceImpl implements WalletService {
 
                                                 // 1️⃣ Check total balance first
                                                 if (dbWallet.getTotalAvailableBalance().compareTo(amount) < 0) {
-                                        return Mono.error(new InsufficientBalanceException("Insufficient balance"));
-                                    }
+                                                    return Mono.error(new InsufficientBalanceException("Insufficient balance"));
+                                                }
 
-                                    BigDecimal remaining = amount;
+                                                BigDecimal remaining = amount;
 
-                                    BigDecimal usedFromWelcome = BigDecimal.ZERO;
-                                    BigDecimal usedFromReferral = BigDecimal.ZERO;
-                                    BigDecimal usedFromPromotional;
-                                    BigDecimal usedFromLocked = BigDecimal.ZERO;
-                                    BigDecimal usedFromDeposit = BigDecimal.ZERO;
+                                                BigDecimal usedFromWelcome = BigDecimal.ZERO;
+                                                BigDecimal usedFromReferral = BigDecimal.ZERO;
+                                                BigDecimal usedFromPromotional;
+                                                BigDecimal usedFromLocked = BigDecimal.ZERO;
+                                                BigDecimal usedFromDeposit = BigDecimal.ZERO;
 
-                                    String lastPaymentFrom = "";
+                                                String lastPaymentFrom = "";
 
-                                    // To track real money amount for accounting
-                                    BigDecimal totalTakenFromBonus = BigDecimal.ZERO;
+                                                // To track real money amount for accounting
+                                                BigDecimal totalTakenFromBonus = BigDecimal.ZERO;
 
                                                 // 2️⃣ Debit Welcome Bonus
                                                 if (remaining.compareTo(BigDecimal.ZERO) > 0 &&
@@ -433,9 +477,9 @@ public class WalletServiceImpl implements WalletService {
                             .then(userProfileMono)
                             .flatMap(userProfile -> {
                                 String walletCacheKeyByTelegram = CacheKeyUtil.getWalletByTelegramIdKey(userProfile.getTelegramId(), dbWallet.getId());
-                    Mono<Boolean> evictByTelegram = cacheService.evict(walletCacheKeyByTelegram);
+                                Mono<Boolean> evictByTelegram = cacheService.evict(walletCacheKeyByTelegram);
 
-                    // Continue only after both evictions
+                                // Continue only after both evictions
                                 return evictByTelegram.then(
                                         // === Your existing credit logic below ===
                                         Mono.defer(() -> {
@@ -457,69 +501,69 @@ public class WalletServiceImpl implements WalletService {
 
                                                     String lastPaymentFrom = dbWallet.getLastPaymentFrom();
 
-                                        if (lastPaymentFrom != null && !lastPaymentFrom.isBlank()) {
+                                                    if (lastPaymentFrom != null && !lastPaymentFrom.isBlank()) {
 
-                                            // Format expected:  WELCOME_BONUS/20.00*REFERRAL_BONUS/40.00*LOCKED_AMOUNT/10.50
-                                            String[] sources = lastPaymentFrom.split("\\*");
+                                                        // Format expected:  WELCOME_BONUS/20.00*REFERRAL_BONUS/40.00*LOCKED_AMOUNT/10.50
+                                                        String[] sources = lastPaymentFrom.split("\\*");
 
-                                            for (String entry : sources) {
+                                                        for (String entry : sources) {
 
-                                                if (!entry.contains("/")) {
-                                                    log.warn("Skipping malformed entry in lastPaymentFrom: {}", entry);
-                                                    continue;
+                                                            if (!entry.contains("/")) {
+                                                                log.warn("Skipping malformed entry in lastPaymentFrom: {}", entry);
+                                                                continue;
+                                                            }
+
+                                                            String[] parts = entry.split("/");
+                                                            if (parts.length != 2) {
+                                                                log.warn("Skipping invalid bonus entry '{}'", entry);
+                                                                continue;
+                                                            }
+
+                                                            String sourceType = parts[0].trim();
+                                                            String amountStr = parts[1].trim();
+
+                                                            BigDecimal refundAmount;
+
+                                                            try {
+                                                                refundAmount = new BigDecimal(amountStr);
+                                                            } catch (Exception ex) {
+                                                                log.warn("Invalid refund amount '{}' in '{}'", amountStr, entry);
+                                                                continue;
+                                                            }
+
+                                                            // accumulate amounts restored by sources
+                                                            explainedBySources = explainedBySources.add(refundAmount);
+
+                                                            switch (sourceType) {
+                                                                case "WELCOME_BONUS":
+                                                                    dbWallet.setAvailableWelcomeBonus(dbWallet.getAvailableWelcomeBonus().add(refundAmount));
+                                                                    dbWallet.setWelcomeBonus(dbWallet.getWelcomeBonus().add(refundAmount));
+                                                                    break;
+
+                                                                case "REFERRAL_BONUS":
+                                                                    dbWallet.setAvailableReferralBonus(dbWallet.getAvailableReferralBonus().add(refundAmount));
+                                                                    dbWallet.setReferralBonus(dbWallet.getReferralBonus().add(refundAmount));
+                                                                    break;
+
+                                                                case "LOCKED_AMOUNT":
+                                                                    dbWallet.setLockedAmount(dbWallet.getLockedAmount().add(refundAmount));
+                                                                    break;
+
+                                                                case "DEPOSIT_BONUS":
+                                                                    dbWallet.setDepositBonus(dbWallet.getDepositBonus().add(refundAmount));
+                                                                    break;
+
+                                                                case "PROMOTIONAL_BONUS":
+                                                                    dbWallet.setPromotionalBonus(dbWallet.getPromotionalBonus().add(refundAmount));
+                                                                    break;
+
+                                                                default:
+                                                                    log.warn("Unknown refund source type: {}", sourceType);
+                                                            }
+
+                                                        }
+                                                    }
                                                 }
-
-                                                String[] parts = entry.split("/");
-                                                if (parts.length != 2) {
-                                                    log.warn("Skipping invalid bonus entry '{}'", entry);
-                                                    continue;
-                                                }
-
-                                                String sourceType = parts[0].trim();
-                                                String amountStr = parts[1].trim();
-
-                                                BigDecimal refundAmount;
-
-                                                try {
-                                                    refundAmount = new BigDecimal(amountStr);
-                                                } catch (Exception ex) {
-                                                    log.warn("Invalid refund amount '{}' in '{}'", amountStr, entry);
-                                                    continue;
-                                                }
-
-                                                // accumulate amounts restored by sources
-                                                explainedBySources = explainedBySources.add(refundAmount);
-
-                                                                switch (sourceType) {
-                                                                    case "WELCOME_BONUS":
-                                                                        dbWallet.setAvailableWelcomeBonus(dbWallet.getAvailableWelcomeBonus().add(refundAmount));
-                                                                        dbWallet.setWelcomeBonus(dbWallet.getWelcomeBonus().add(refundAmount));
-                                                                        break;
-
-                                                                    case "REFERRAL_BONUS":
-                                                                        dbWallet.setAvailableReferralBonus(dbWallet.getAvailableReferralBonus().add(refundAmount));
-                                                                        dbWallet.setReferralBonus(dbWallet.getReferralBonus().add(refundAmount));
-                                                                        break;
-
-                                                                    case "LOCKED_AMOUNT":
-                                                                        dbWallet.setLockedAmount(dbWallet.getLockedAmount().add(refundAmount));
-                                                                        break;
-
-                                                                    case "DEPOSIT_BONUS":
-                                                                        dbWallet.setDepositBonus(dbWallet.getDepositBonus().add(refundAmount));
-                                                                        break;
-
-                                                                    case "PROMOTIONAL_BONUS":
-                                                                        dbWallet.setPromotionalBonus(dbWallet.getPromotionalBonus().add(refundAmount));
-                                                                        break;
-
-                                                                    default:
-                                                                        log.warn("Unknown refund source type: {}", sourceType);
-                                                                }
-
-                                            }
-                                        }
-                                    }
 
                                                 BigDecimal availableToWithdraw = totalAvailableBalance
                                                         .subtract(dbWallet.getAvailableWelcomeBonus())
@@ -541,38 +585,38 @@ public class WalletServiceImpl implements WalletService {
                                                         : BigDecimal.ZERO;
 
                                                 Mono<WalletDto> savedWalletMono = walletRepository.save(dbWallet)
-                                            .map(WalletMapper::toDto);
+                                                        .map(WalletMapper::toDto);
 
-                                    // Only apply metrics update if:
-                                    // - it’s a REFUND
-                                    // - we have a gameId
-                                    // - there is a real-money portion > 0
-                                    if (GameTxnType.REFUND.equals(gameTxnType)
-                                            && gameId != null
-                                            && realPortion.compareTo(BigDecimal.ZERO) > 0) {
+                                                // Only apply metrics update if:
+                                                // - it’s a REFUND
+                                                // - we have a gameId
+                                                // - there is a real-money portion > 0
+                                                if (GameTxnType.REFUND.equals(gameTxnType)
+                                                        && gameId != null
+                                                        && realPortion.compareTo(BigDecimal.ZERO) > 0) {
 
-                                        return savedWalletMono.flatMap(dto ->
-                                                bingoGameMetricsRedisService
-                                                        .addRealMoneyAmount(gameId, realPortion.negate())
-                                                        .doOnNext(updated ->
-                                                                log.info("Deducted real-money refund portion {} from bingo metrics for game {}. Updated: {}",
-                                                                        realPortion, gameId, updated)
-                                                        )
-                                                        .thenReturn(dto)
-                                        );
-                                    }
+                                                    return savedWalletMono.flatMap(dto ->
+                                                            bingoGameMetricsRedisService
+                                                                    .addRealMoneyAmount(gameId, realPortion.negate())
+                                                                    .doOnNext(updated ->
+                                                                            log.info("Deducted real-money refund portion {} from bingo metrics for game {}. Updated: {}",
+                                                                                    realPortion, gameId, updated)
+                                                                    )
+                                                                    .thenReturn(dto)
+                                                    );
+                                                }
 
-                                    return savedWalletMono;
-                                }
+                                                return savedWalletMono;
+                                            }
 
-                                return Mono.error(new IllegalArgumentException("Unsupported transaction type for credit: " + gameTxnType));
+                                            return Mono.error(new IllegalArgumentException("Unsupported transaction type for credit: " + gameTxnType));
+                                        })
+                                );
                             })
-                    );
-                })
-                .onErrorMap(e -> {
-                    log.error("Error crediting wallet", e);
-                    return new RuntimeException("Failed to credit wallet", e);
-                });
+                            .onErrorMap(e -> {
+                                log.error("Error crediting wallet", e);
+                                return new RuntimeException("Failed to credit wallet", e);
+                            });
                 });
     }
 

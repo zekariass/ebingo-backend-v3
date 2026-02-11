@@ -34,7 +34,6 @@ public class WalletController {
     @GetMapping
     @Operation(summary = "Get wallet", description = "Get wallet for the authenticated Telegram user")
     public Mono<ResponseEntity<ApiResponse<WalletDto>>> getWallet(
-//            @RequestHeader("x-init-data") String telegramInitData,
             @RequestParam Long telegramId,
             @RequestParam Long agentId,
             ServerWebExchange exchange
