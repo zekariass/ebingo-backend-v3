@@ -1,6 +1,7 @@
 package com.ebingo.backend.externalgame.controller;
 
 import com.ebingo.backend.externalgame.dto.webhook.*;
+import com.ebingo.backend.externalgame.service.GoldenEggsBonusService;
 import com.ebingo.backend.externalgame.service.GoldenEggsIntegrationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,6 +46,11 @@ class GoldenEggsWebhookControllerTest {
         }
 
         @Bean
+        public GoldenEggsBonusService bonusService() {
+            return Mockito.mock(GoldenEggsBonusService.class);
+        }
+
+        @Bean
         public ObjectMapper objectMapper() {
             return new ObjectMapper();
         }
@@ -54,6 +60,8 @@ class GoldenEggsWebhookControllerTest {
 
     @BeforeEach
     void setUp() {
+        // Reset mocks before each test
+        Mockito.reset(integrationService);
         // Default signature validation to true
         when(integrationService.validateSignature(anyString(), anyString())).thenReturn(true);
     }
@@ -65,7 +73,7 @@ class GoldenEggsWebhookControllerTest {
                 .action("init")
                 .token("test-token")
                 .data(InitRequestData.builder()
-                        .currency("USD")
+                        .currency("ETB")
                         .operator("test-operator")
                         .gameMode("crash")
                         .build())
@@ -80,7 +88,7 @@ class GoldenEggsWebhookControllerTest {
                 .userId("1")
                 .nickname("testuser")
                 .balance("100.00")
-                .currency("USD")
+                .currency("ETB")
                 .operator("test-operator")
                 .token("session-token")
                 .build();
@@ -111,7 +119,7 @@ class GoldenEggsWebhookControllerTest {
                 .gameMode("crash")
                 .data(BetRequestData.builder()
                         .amount("100.00")
-                        .currency("USD")
+                        .currency("ETB")
                         .operator("test-operator")
                         .userId("1")
                         .transactionId(UUID.randomUUID())
@@ -152,7 +160,7 @@ class GoldenEggsWebhookControllerTest {
                 .gameMode("crash")
                 .data(WithdrawRequestData.builder()
                         .userId("1")
-                        .currency("USD")
+                        .currency("ETB")
                         .operator("test-operator")
                         .amount("100.00")
                         .result("200.00")
@@ -196,7 +204,7 @@ class GoldenEggsWebhookControllerTest {
                 .gameMode("crash")
                 .data(WithdrawRequestData.builder()
                         .userId("1")
-                        .currency("USD")
+                        .currency("ETB")
                         .operator("test-operator")
                         .amount("100.00")
                         .result("200.00")
@@ -250,7 +258,7 @@ class GoldenEggsWebhookControllerTest {
                 .gameMode("crash")
                 .data(RollbackRequestData.builder()
                         .userId("1")
-                        .currency("USD")
+                        .currency("ETB")
                         .operator("test-operator")
                         .amount("100.00")
                         .transactionId(UUID.randomUUID())
@@ -290,7 +298,7 @@ class GoldenEggsWebhookControllerTest {
                 .action("init")
                 .token("test-token")
                 .data(InitRequestData.builder()
-                        .currency("USD")
+                        .currency("ETB")
                         .operator("test-operator")
                         .gameMode("crash")
                         .build())
@@ -316,7 +324,7 @@ class GoldenEggsWebhookControllerTest {
                 .action("init")
                 .token("test-token")
                 .data(InitRequestData.builder()
-                        .currency("USD")
+                        .currency("ETB")
                         .operator("test-operator")
                         .gameMode("crash")
                         .build())
@@ -333,6 +341,297 @@ class GoldenEggsWebhookControllerTest {
                 .expectStatus().isOk() // Still 200 as per provider requirements
                 .expectBody()
                 .jsonPath("$.code").isEqualTo("INVALID_TOKEN");
+    }
+
+    @Test
+    void testInitWebhook_InvalidCurrency() throws Exception {
+        // Prepare request with invalid currency (not ETB)
+        InitRequest request = InitRequest.builder()
+                .action("init")
+                .token("test-token")
+                .data(InitRequestData.builder()
+                        .currency("USD") // Invalid - should be ETB
+                        .operator("test-operator")
+                        .gameMode("crash")
+                        .build())
+                .build();
+
+        String requestBody = objectMapper.writeValueAsString(request);
+        String signature = generateSignature(requestBody);
+
+        // Execute and verify - should return error WITHOUT calling service
+        webTestClient.post()
+                .uri("/webhooks/golden-eggs")
+                .header("X-REQUEST-SIGN", signature)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(requestBody)
+                .exchange()
+                .expectStatus().isOk() // Still 200 as per provider requirements
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("CHECKS_FAIL")
+                .jsonPath("$.message").isEqualTo("Only ETB currency is supported");
+
+        // Verify that handleInit was NEVER called (balance not changed)
+        Mockito.verify(integrationService, Mockito.never()).handleInit(any(InitRequest.class));
+    }
+
+    @Test
+    void testBetWebhook_InvalidCurrency() throws Exception {
+        // Prepare request with invalid currency (not ETB)
+        BetRequest request = BetRequest.builder()
+                .action("bet")
+                .token("session-token")
+                .gameMode("crash")
+                .data(BetRequestData.builder()
+                        .amount("100.00")
+                        .currency("USD") // Invalid - should be ETB
+                        .operator("test-operator")
+                        .userId("1")
+                        .transactionId(UUID.randomUUID())
+                        .gameId(UUID.randomUUID())
+                        .build())
+                .build();
+
+        String requestBody = objectMapper.writeValueAsString(request);
+        String signature = generateSignature(requestBody);
+
+        // Execute and verify - should return error WITHOUT calling service
+        webTestClient.post()
+                .uri("/webhooks/golden-eggs")
+                .header("X-REQUEST-SIGN", signature)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(requestBody)
+                .exchange()
+                .expectStatus().isOk() // Still 200 as per provider requirements
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("CHECKS_FAIL")
+                .jsonPath("$.message").isEqualTo("Only ETB currency is supported");
+
+        // Verify that handleBet was NEVER called (balance not changed)
+        Mockito.verify(integrationService, Mockito.never()).handleBet(any(BetRequest.class));
+    }
+
+    @Test
+    void testWithdrawWebhook_InvalidCurrency() throws Exception {
+        // Prepare request with invalid currency (not ETB)
+        WithdrawRequest request = WithdrawRequest.builder()
+                .action("withdraw")
+                .token("session-token")
+                .gameMode("crash")
+                .data(WithdrawRequestData.builder()
+                        .userId("1")
+                        .currency("EUR") // Invalid - should be ETB
+                        .operator("test-operator")
+                        .amount("100.00")
+                        .result("200.00")
+                        .coefficient("2.00")
+                        .transactionId(UUID.randomUUID())
+                        .debitId(UUID.randomUUID())
+                        .gameId(UUID.randomUUID())
+                        .isFinished(true)
+                        .build())
+                .build();
+
+        String requestBody = objectMapper.writeValueAsString(request);
+        String signature = generateSignature(requestBody);
+
+        // Execute and verify - should return error WITHOUT calling service
+        webTestClient.post()
+                .uri("/webhooks/golden-eggs")
+                .header("X-REQUEST-SIGN", signature)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(requestBody)
+                .exchange()
+                .expectStatus().isOk() // Still 200 as per provider requirements
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("CHECKS_FAIL")
+                .jsonPath("$.message").isEqualTo("Only ETB currency is supported");
+
+        // Verify that handleWithdraw was NEVER called (balance not changed)
+        Mockito.verify(integrationService, Mockito.never()).handleWithdraw(any(WithdrawRequest.class));
+    }
+
+    @Test
+    void testRollbackWebhook_InvalidCurrency() throws Exception {
+        // Prepare request with invalid currency (not ETB)
+        RollbackRequest request = RollbackRequest.builder()
+                .action("rollback")
+                .token("session-token")
+                .gameMode("crash")
+                .data(RollbackRequestData.builder()
+                        .userId("1")
+                        .currency("GBP") // Invalid - should be ETB
+                        .operator("test-operator")
+                        .amount("100.00")
+                        .transactionId(UUID.randomUUID())
+                        .debitId(UUID.randomUUID())
+                        .gameId(UUID.randomUUID())
+                        .isFinished(true)
+                        .build())
+                .build();
+
+        String requestBody = objectMapper.writeValueAsString(request);
+        String signature = generateSignature(requestBody);
+
+        // Execute and verify - should return error WITHOUT calling service
+        webTestClient.post()
+                .uri("/webhooks/golden-eggs")
+                .header("X-REQUEST-SIGN", signature)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(requestBody)
+                .exchange()
+                .expectStatus().isOk() // Still 200 as per provider requirements
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("CHECKS_FAIL")
+                .jsonPath("$.message").isEqualTo("Only ETB currency is supported");
+
+        // Verify that handleRollback was NEVER called (balance not changed)
+        Mockito.verify(integrationService, Mockito.never()).handleRollback(any(RollbackRequest.class));
+    }
+
+    @Test
+    void testBetWebhook_ValidCurrency_ETB() throws Exception {
+        // Prepare request with valid currency (ETB)
+        BetRequest request = BetRequest.builder()
+                .action("bet")
+                .token("session-token")
+                .gameMode("crash")
+                .data(BetRequestData.builder()
+                        .amount("100.00")
+                        .currency("ETB") // Valid
+                        .operator("test-operator")
+                        .userId("1")
+                        .transactionId(UUID.randomUUID())
+                        .gameId(UUID.randomUUID())
+                        .build())
+                .build();
+
+        String requestBody = objectMapper.writeValueAsString(request);
+        String signature = generateSignature(requestBody);
+
+        // Mock service response
+        BetResponse response = BetResponse.builder()
+                .code("OK")
+                .balance("900.00")
+                .hideFromStat(false)
+                .build();
+
+        when(integrationService.handleBet(any(BetRequest.class)))
+                .thenReturn(Mono.just(response));
+
+        // Execute and verify - should call service and return success
+        webTestClient.post()
+                .uri("/webhooks/golden-eggs")
+                .header("X-REQUEST-SIGN", signature)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(requestBody)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("OK")
+                .jsonPath("$.balance").isEqualTo("900.00")
+                .jsonPath("$.hideFromStat").isEqualTo(false);
+
+        // Verify that handleBet WAS called (balance changed)
+        Mockito.verify(integrationService, Mockito.times(1)).handleBet(any(BetRequest.class));
+    }
+
+    @Test
+    void testRollbackWebhook_OriginalBetNotFound() throws Exception {
+        // Prepare rollback request
+        RollbackRequest request = RollbackRequest.builder()
+                .action("rollback")
+                .token("session-token")
+                .gameMode("crash")
+                .data(RollbackRequestData.builder()
+                        .currency("ETB")
+                        .operator("test-operator")
+                        .amount("100.00")
+                        .userId("1")
+                        .transactionId(UUID.randomUUID())
+                        .debitId(UUID.randomUUID()) // This debitId doesn't exist in the database
+                        .gameId(UUID.randomUUID())
+                        .isFinished(true)
+                        .build())
+                .build();
+
+        String requestBody = objectMapper.writeValueAsString(request);
+        String signature = generateSignature(requestBody);
+
+        // Mock service response - original BET transaction not found
+        String errorResponseJson = objectMapper.writeValueAsString(
+                ErrorResponse.builder()
+                        .code("DEBIT_TRANSACTION_NOT_FOUND")
+                        .message("Related debit transaction was not found")
+                        .build()
+        );
+
+        when(integrationService.handleRollback(any(RollbackRequest.class)))
+                .thenReturn(Mono.just(errorResponseJson));
+
+        // Execute and verify
+        webTestClient.post()
+                .uri("/webhooks/golden-eggs")
+                .header("X-REQUEST-SIGN", signature)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(requestBody)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("DEBIT_TRANSACTION_NOT_FOUND")
+                .jsonPath("$.message").isEqualTo("Related debit transaction was not found");
+
+        // Verify that handleRollback was called
+        Mockito.verify(integrationService, Mockito.times(1)).handleRollback(any(RollbackRequest.class));
+    }
+
+    @Test
+    void testRollbackWebhook_SuccessWithValidBet() throws Exception {
+        // Prepare rollback request
+        RollbackRequest request = RollbackRequest.builder()
+                .action("rollback")
+                .token("session-token")
+                .gameMode("crash")
+                .data(RollbackRequestData.builder()
+                        .currency("ETB")
+                        .operator("test-operator")
+                        .amount("100.00")
+                        .userId("1")
+                        .transactionId(UUID.randomUUID())
+                        .debitId(UUID.randomUUID()) // Assume this exists
+                        .gameId(UUID.randomUUID())
+                        .isFinished(true)
+                        .build())
+                .build();
+
+        String requestBody = objectMapper.writeValueAsString(request);
+        String signature = generateSignature(requestBody);
+
+        // Mock service response - successful rollback
+        String successResponseJson = objectMapper.writeValueAsString(
+                RollbackResponse.builder()
+                        .code("OK")
+                        .balance("1100.00")
+                        .build()
+        );
+
+        when(integrationService.handleRollback(any(RollbackRequest.class)))
+                .thenReturn(Mono.just(successResponseJson));
+
+        // Execute and verify
+        webTestClient.post()
+                .uri("/webhooks/golden-eggs")
+                .header("X-REQUEST-SIGN", signature)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(requestBody)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("OK")
+                .jsonPath("$.balance").isEqualTo("1100.00");
+
+        // Verify that handleRollback was called
+        Mockito.verify(integrationService, Mockito.times(1)).handleRollback(any(RollbackRequest.class));
     }
 
     private String generateSignature(String body) throws Exception {

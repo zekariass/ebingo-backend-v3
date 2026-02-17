@@ -1,7 +1,11 @@
 package com.ebingo.backend.externalgame.controller;
 
 import com.ebingo.backend.externalgame.dto.bonus.BonusDTOs.BonusWebhookRequest;
-import com.ebingo.backend.externalgame.dto.webhook.*;
+import com.ebingo.backend.externalgame.dto.webhook.BetRequest;
+import com.ebingo.backend.externalgame.dto.webhook.ErrorResponse;
+import com.ebingo.backend.externalgame.dto.webhook.InitRequest;
+import com.ebingo.backend.externalgame.dto.webhook.RollbackRequest;
+import com.ebingo.backend.externalgame.dto.webhook.WithdrawRequest;
 import com.ebingo.backend.externalgame.service.GoldenEggsBonusService;
 import com.ebingo.backend.externalgame.service.GoldenEggsIntegrationService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -77,10 +81,15 @@ public class GoldenEggsWebhookController {
             String action = baseRequest.get("action").asText();
 
             log.info("Routing webhook action: {}", action);
+            log.info("Raw body: {}", rawBody);
 
             switch (action) {
                 case "init":
                     InitRequest initRequest = objectMapper.readValue(rawBody, InitRequest.class);
+                    if (!isValidCurrency(initRequest.getData().getCurrency())) {
+                        log.warn("Invalid currency for init request: {}", initRequest.getData().getCurrency());
+                        return createErrorResponse("CHECKS_FAIL", "Only ETB currency is supported");
+                    }
                     return integrationService.handleInit(initRequest)
                             .flatMap(response -> {
                                 try {
@@ -96,6 +105,10 @@ public class GoldenEggsWebhookController {
 
                 case "bet":
                     BetRequest betRequest = objectMapper.readValue(rawBody, BetRequest.class);
+                    if (!isValidCurrency(betRequest.getData().getCurrency())) {
+                        log.warn("Invalid currency for bet request: {}", betRequest.getData().getCurrency());
+                        return createErrorResponse("CHECKS_FAIL", "Only ETB currency is supported");
+                    }
                     return integrationService.handleBet(betRequest)
                             .flatMap(response -> {
                                 try {
@@ -111,6 +124,10 @@ public class GoldenEggsWebhookController {
 
                 case "withdraw":
                     WithdrawRequest withdrawRequest = objectMapper.readValue(rawBody, WithdrawRequest.class);
+                    if (!isValidCurrency(withdrawRequest.getData().getCurrency())) {
+                        log.warn("Invalid currency for withdraw request: {}", withdrawRequest.getData().getCurrency());
+                        return createErrorResponse("CHECKS_FAIL", "Only ETB currency is supported");
+                    }
                     return integrationService.handleWithdraw(withdrawRequest)
                             .map(jsonResponse -> ResponseEntity.ok()
                                     .contentType(MediaType.APPLICATION_JSON)
@@ -118,6 +135,10 @@ public class GoldenEggsWebhookController {
 
                 case "rollback":
                     RollbackRequest rollbackRequest = objectMapper.readValue(rawBody, RollbackRequest.class);
+                    if (!isValidCurrency(rollbackRequest.getData().getCurrency())) {
+                        log.warn("Invalid currency for rollback request: {}", rollbackRequest.getData().getCurrency());
+                        return createErrorResponse("CHECKS_FAIL", "Only ETB currency is supported");
+                    }
                     return integrationService.handleRollback(rollbackRequest)
                             .map(jsonResponse -> ResponseEntity.ok()
                                     .contentType(MediaType.APPLICATION_JSON)
@@ -161,6 +182,13 @@ public class GoldenEggsWebhookController {
             log.error("Error parsing webhook request", e);
             return createErrorResponse("UNKNOWN_ERROR", "Invalid request format");
         }
+    }
+
+    /**
+     * Validate that currency is ETB
+     */
+    private boolean isValidCurrency(String currency) {
+        return "ETB".equalsIgnoreCase(currency);
     }
 
     /**

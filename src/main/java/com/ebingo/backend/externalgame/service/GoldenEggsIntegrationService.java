@@ -468,6 +468,7 @@ public class GoldenEggsIntegrationService {
                                                         .map(updated -> BetResponse.builder()
                                                                 .code("OK")
                                                                 .balance(walletResult.getBalance())
+                                                                .hideFromStat(false)
                                                                 .build());
                                             } else {
                                                 savedTxn.setStatus("FAILED");
@@ -502,11 +503,74 @@ public class GoldenEggsIntegrationService {
         log.info("Handling withdraw request: txnId={}, result={}",
                 request.getData().getTransactionId(), request.getData().getResult());
 
-        // Check for existing successful transaction (idempotency)
-        return txnRepository.findSuccessfulTransaction("WITHDRAW", request.getData().getTransactionId())
+        // Check for ANY existing transaction first (idempotency - prevents race conditions)
+        return txnRepository.findByActionAndProviderTransactionId("WITHDRAW", request.getData().getTransactionId())
                 .flatMap(existingTxn -> {
-                    log.info("Found existing successful withdraw transaction, returning cached response");
-                    return Mono.just(existingTxn.getResponseSnapshot());
+                    log.info("Found existing withdraw transaction with status: {}", existingTxn.getStatus());
+                    if ("SUCCESS".equals(existingTxn.getStatus())) {
+                        // Return success with CURRENT balance (not cached)
+                        log.info("Withdraw transaction {} already processed, returning current balance", request.getData().getTransactionId());
+                        return walletRepository.findByUserProfileId(existingTxn.getUserId())
+                                .flatMap(wallet -> {
+                                    try {
+                                        String currentBalance = walletService.formatBalance(
+                                                wallet.getTotalAvailableBalance(),
+                                                existingTxn.getCurrency()
+                                        );
+                                        WithdrawResponse response = WithdrawResponse.builder()
+                                                .code("OK")
+                                                .balance(currentBalance)
+                                                .build();
+                                        return Mono.just(objectMapper.writeValueAsString(response));
+                                    } catch (Exception e) {
+                                        log.error("Error building withdraw response for idempotent request", e);
+                                        return Mono.error(e);
+                                    }
+                                })
+                                .switchIfEmpty(Mono.defer(() -> {
+                                    // Wallet not found - return cached response as fallback
+                                    if (existingTxn.getResponseSnapshot() != null) {
+                                        return Mono.just(existingTxn.getResponseSnapshot());
+                                    }
+                                    try {
+                                        ErrorResponse errorResponse = ErrorResponse.builder()
+                                                .code("ACCOUNT_INVALID")
+                                                .message("Wallet not found")
+                                                .build();
+                                        return Mono.just(objectMapper.writeValueAsString(errorResponse));
+                                    } catch (Exception e) {
+                                        return Mono.error(e);
+                                    }
+                                }));
+                    } else if ("PENDING".equals(existingTxn.getStatus())) {
+                        // Transaction is being processed, return temporary error
+                        log.warn("Withdraw transaction {} is already being processed", request.getData().getTransactionId());
+                        try {
+                            ErrorResponse errorResponse = ErrorResponse.builder()
+                                    .code("TEMPORARY_ERROR")
+                                    .message("Transaction is being processed")
+                                    .build();
+                            return Mono.just(objectMapper.writeValueAsString(errorResponse));
+                        } catch (Exception e) {
+                            return Mono.error(e);
+                        }
+                    } else {
+                        // Failed transaction - return the cached error response if available
+                        if (existingTxn.getResponseSnapshot() != null) {
+                            return Mono.just(existingTxn.getResponseSnapshot());
+                        } else {
+                            // Reconstruct error response
+                            try {
+                                ErrorResponse errorResponse = ErrorResponse.builder()
+                                        .code(existingTxn.getErrorCode() != null ? existingTxn.getErrorCode() : "UNKNOWN_ERROR")
+                                        .message(existingTxn.getErrorMessage() != null ? existingTxn.getErrorMessage() : "Transaction failed")
+                                        .build();
+                                return Mono.just(objectMapper.writeValueAsString(errorResponse));
+                            } catch (Exception e) {
+                                return Mono.error(e);
+                            }
+                        }
+                    }
                 })
                 .switchIfEmpty(
                         sessionRepository.findActiveSession(request.getToken(), Instant.now())
@@ -597,6 +661,40 @@ public class GoldenEggsIntegrationService {
                                     }
                                 }))
                 )
+                .onErrorResume(org.springframework.dao.DuplicateKeyException.class, e -> {
+                    // Duplicate transaction detected - fetch and return cached response
+                    log.warn("Duplicate withdraw transaction detected: {}", request.getData().getTransactionId());
+                    return txnRepository.findByActionAndProviderTransactionId("WITHDRAW", request.getData().getTransactionId())
+                            .flatMap(existingTxn -> {
+                                if (existingTxn.getResponseSnapshot() != null) {
+                                    return Mono.just(existingTxn.getResponseSnapshot());
+                                } else {
+                                    // Transaction exists but no response yet - return temporary error
+                                    try {
+                                        return Mono.just(objectMapper.writeValueAsString(
+                                                ErrorResponse.builder()
+                                                        .code("TEMPORARY_ERROR")
+                                                        .message("Transaction is being processed")
+                                                        .build()
+                                        ));
+                                    } catch (JsonProcessingException ex) {
+                                        return Mono.just("{\"code\":\"TEMPORARY_ERROR\"}");
+                                    }
+                                }
+                            })
+                            .switchIfEmpty(Mono.fromCallable(() -> {
+                                try {
+                                    return objectMapper.writeValueAsString(
+                                            ErrorResponse.builder()
+                                                    .code("UNKNOWN_ERROR")
+                                                    .message("Duplicate transaction but not found in database")
+                                                    .build()
+                                    );
+                                } catch (JsonProcessingException ex) {
+                                    return "{\"code\":\"UNKNOWN_ERROR\"}";
+                                }
+                            }));
+                })
                 .onErrorResume(e -> {
                     log.error("Error handling withdraw", e);
                     try {
@@ -614,100 +712,187 @@ public class GoldenEggsIntegrationService {
 
     /**
      * Handle rollback webhook (idempotent)
+     * Validates that the original BET transaction exists before processing rollback
      */
     public Mono<String> handleRollback(RollbackRequest request) {
-        log.info("Handling rollback request: txnId={}, amount={}",
-                request.getData().getTransactionId(), request.getData().getAmount());
+        log.info("Handling rollback request: txnId={}, debitId={}, amount={}",
+                request.getData().getTransactionId(), request.getData().getDebitId(), request.getData().getAmount());
 
-        // Check for existing successful transaction (idempotency)
-        return txnRepository.findSuccessfulTransaction("ROLLBACK", request.getData().getTransactionId())
-                .flatMap(existingTxn -> {
-                    log.info("Found existing successful rollback transaction, returning cached response");
-                    return Mono.just(existingTxn.getResponseSnapshot());
-                })
-                .switchIfEmpty(
-                        sessionRepository.findActiveSession(request.getToken(), Instant.now())
-                                .flatMap(session -> {
-                                    ExternalGameSession gameSession = session;
-                                    BigDecimal amount = new BigDecimal(request.getData().getAmount());
+        // STEP 1: Verify original BET transaction exists with status=SUCCESS
+        return txnRepository.findSuccessfulBetByDebitId(request.getData().getDebitId())
+                .flatMap(originalBetTxn -> {
+                    log.info("Found original BET transaction: id={}, status={}",
+                            originalBetTxn.getId(), originalBetTxn.getStatus());
 
-                                    // Create transaction record
-                                    ExternalGameTxn txn = ExternalGameTxn.builder()
-                                            .id(UUID.randomUUID())
-                                            .action("ROLLBACK")
-                                            .providerTransactionId(request.getData().getTransactionId())
-                                            .debitId(request.getData().getDebitId())
-                                            .gameId(request.getData().getGameId())
-                                            .userId(gameSession.getUserId())
-                                            .agentId(gameSession.getAgentId())
-                                            .operatorId(gameSession.getOperatorId())
-                                            .currency(request.getData().getCurrency())
-                                            .gameMode(request.getGameMode())
-                                            .amount(amount)
-                                            .isFinished(request.getData().getIsFinished())
-                                            .status("PENDING")
-                                            .createdAt(Instant.now())
-                                            .updatedAt(Instant.now())
-                                            .build();
-
-                                    return txnRepository.save(txn)
-                                            .flatMap(savedTxn -> {
-                                                // Mark as not new to allow UPDATE on subsequent saves
-                                                savedTxn.setNew(false);
-                                                return walletService.rollbackExternalGame(
-                                                                gameSession.getUserId(),
-                                                                amount,
-                                                                request.getData().getCurrency(),
-                                                                request.getData().getTransactionId(),
-                                                                request.getData().getDebitId(),
-                                                                request.getData().getGameId()
-                                                        )
-                                                        .flatMap(walletResult -> {
-                                                            try {
-                                                                String responseJson;
-                                                                if (walletResult.isSuccess()) {
-                                                                    savedTxn.setStatus("SUCCESS");
-                                                                    // Record rollback in accounting (async)
-                                                                    recordRollbackAsync(amount, request.getData().getCurrency(), gameSession.getAgentId());
-                                                                    RollbackResponse response = RollbackResponse.builder()
-                                                                            .code("OK")
-                                                                            .balance(walletResult.getBalance())
-                                                                            .build();
-                                                                    responseJson = objectMapper.writeValueAsString(response);
-                                                                } else {
-                                                                    savedTxn.setStatus("FAILED");
-                                                                    savedTxn.setErrorCode(walletResult.getErrorCode());
-                                                                    savedTxn.setErrorMessage(walletResult.getErrorMessage());
-                                                                    ErrorResponse errorResponse = ErrorResponse.builder()
-                                                                            .code(walletResult.getErrorCode())
-                                                                            .message(walletResult.getErrorMessage())
-                                                                            .build();
-                                                                    responseJson = objectMapper.writeValueAsString(errorResponse);
-                                                                }
-
-                                                                savedTxn.setResponseSnapshot(responseJson);
-                                                                return txnRepository.save(savedTxn)
-                                                                        .map(updated -> responseJson);
-                                                            } catch (JsonProcessingException e) {
-                                                                log.error("Error serializing response", e);
-                                                                return Mono.just("{\"code\":\"UNKNOWN_ERROR\"}");
-                                                            }
-                                                        });
-                                            });
-                                })
-                                .switchIfEmpty(Mono.fromCallable(() -> {
+                    // STEP 2: Check for ANY existing ROLLBACK transaction (idempotency - prevents race conditions)
+                    return txnRepository.findByActionAndProviderTransactionId("ROLLBACK", request.getData().getTransactionId())
+                            .flatMap(existingTxn -> {
+                                log.info("Found existing rollback transaction with status: {}", existingTxn.getStatus());
+                                if ("SUCCESS".equals(existingTxn.getStatus())) {
+                                    // Return success with CURRENT balance (not cached)
+                                    log.info("Rollback transaction {} already processed, returning current balance", request.getData().getTransactionId());
+                                    return walletRepository.findByUserProfileId(existingTxn.getUserId())
+                                            .flatMap(wallet -> {
+                                                try {
+                                                    String currentBalance = walletService.formatBalance(
+                                                            wallet.getTotalAvailableBalance(),
+                                                            existingTxn.getCurrency()
+                                                    );
+                                                    RollbackResponse response = RollbackResponse.builder()
+                                                            .code("OK")
+                                                            .balance(currentBalance)
+                                                            .build();
+                                                    return Mono.just(objectMapper.writeValueAsString(response));
+                                                } catch (Exception e) {
+                                                    log.error("Error building rollback response for idempotent request", e);
+                                                    return Mono.error(e);
+                                                }
+                                            })
+                                            .switchIfEmpty(Mono.defer(() -> {
+                                                // Wallet not found - return cached response as fallback
+                                                if (existingTxn.getResponseSnapshot() != null) {
+                                                    return Mono.just(existingTxn.getResponseSnapshot());
+                                                }
+                                                try {
+                                                    ErrorResponse errorResponse = ErrorResponse.builder()
+                                                            .code("ACCOUNT_INVALID")
+                                                            .message("Wallet not found")
+                                                            .build();
+                                                    return Mono.just(objectMapper.writeValueAsString(errorResponse));
+                                                } catch (Exception e) {
+                                                    return Mono.error(e);
+                                                }
+                                            }));
+                                } else if ("PENDING".equals(existingTxn.getStatus())) {
+                                    // Transaction is being processed, return temporary error
+                                    log.warn("Rollback transaction {} is already being processed", request.getData().getTransactionId());
                                     try {
-                                        return objectMapper.writeValueAsString(
-                                                ErrorResponse.builder()
-                                                        .code("INVALID_TOKEN")
-                                                        .message("Invalid or expired session")
-                                                        .build()
-                                        );
-                                    } catch (JsonProcessingException e) {
-                                        return "{\"code\":\"INVALID_TOKEN\"}";
+                                        ErrorResponse errorResponse = ErrorResponse.builder()
+                                                .code("TEMPORARY_ERROR")
+                                                .message("Transaction is being processed")
+                                                .build();
+                                        return Mono.just(objectMapper.writeValueAsString(errorResponse));
+                                    } catch (Exception e) {
+                                        return Mono.error(e);
                                     }
-                                }))
-                )
+                                } else {
+                                    // Failed transaction - return the cached error response if available
+                                    if (existingTxn.getResponseSnapshot() != null) {
+                                        return Mono.just(existingTxn.getResponseSnapshot());
+                                    } else {
+                                        // Reconstruct error response
+                                        try {
+                                            ErrorResponse errorResponse = ErrorResponse.builder()
+                                                    .code(existingTxn.getErrorCode() != null ? existingTxn.getErrorCode() : "UNKNOWN_ERROR")
+                                                    .message(existingTxn.getErrorMessage() != null ? existingTxn.getErrorMessage() : "Transaction failed")
+                                                    .build();
+                                            return Mono.just(objectMapper.writeValueAsString(errorResponse));
+                                        } catch (Exception e) {
+                                            return Mono.error(e);
+                                        }
+                                    }
+                                }
+                            })
+                            .switchIfEmpty(
+                                    sessionRepository.findActiveSession(request.getToken(), Instant.now())
+                                            .flatMap(session -> {
+                                                log.info(">>>>>>>>>>>>>>>>>>>>>>>> Processing new rollback transaction: {}", request.getData().getTransactionId());
+                                                ExternalGameSession gameSession = session;
+                                                BigDecimal amount = new BigDecimal(request.getData().getAmount());
+
+                                                // Create transaction record
+                                                ExternalGameTxn txn = ExternalGameTxn.builder()
+                                                        .id(UUID.randomUUID())
+                                                        .action("ROLLBACK")
+                                                        .providerTransactionId(request.getData().getTransactionId())
+                                                        .debitId(request.getData().getDebitId())
+                                                        .gameId(request.getData().getGameId())
+                                                        .userId(gameSession.getUserId())
+                                                        .agentId(gameSession.getAgentId())
+                                                        .operatorId(gameSession.getOperatorId())
+                                                        .currency(request.getData().getCurrency())
+                                                        .gameMode(request.getGameMode())
+                                                        .amount(amount)
+                                                        .isFinished(request.getData().getIsFinished())
+                                                        .status("PENDING")
+                                                        .createdAt(Instant.now())
+                                                        .updatedAt(Instant.now())
+                                                        .build();
+
+                                                return txnRepository.save(txn)
+                                                        .flatMap(savedTxn -> {
+                                                            // Mark as not new to allow UPDATE on subsequent saves
+                                                            savedTxn.setNew(false);
+                                                            return walletService.rollbackExternalGame(
+                                                                            gameSession.getUserId(),
+                                                                            amount,
+                                                                            request.getData().getCurrency(),
+                                                                            request.getData().getTransactionId(),
+                                                                            request.getData().getDebitId(),
+                                                                            request.getData().getGameId()
+                                                                    )
+                                                                    .flatMap(walletResult -> {
+                                                                        try {
+                                                                            String responseJson;
+                                                                            if (walletResult.isSuccess()) {
+                                                                                savedTxn.setStatus("SUCCESS");
+                                                                                // Record rollback in accounting (async)
+                                                                                recordRollbackAsync(amount, request.getData().getCurrency(), gameSession.getAgentId());
+                                                                                RollbackResponse response = RollbackResponse.builder()
+                                                                                        .code("OK")
+                                                                                        .balance(walletResult.getBalance())
+                                                                                        .build();
+                                                                                responseJson = objectMapper.writeValueAsString(response);
+                                                                            } else {
+                                                                                savedTxn.setStatus("FAILED");
+                                                                                savedTxn.setErrorCode(walletResult.getErrorCode());
+                                                                                savedTxn.setErrorMessage(walletResult.getErrorMessage());
+                                                                                ErrorResponse errorResponse = ErrorResponse.builder()
+                                                                                        .code(walletResult.getErrorCode())
+                                                                                        .message(walletResult.getErrorMessage())
+                                                                                        .build();
+                                                                                responseJson = objectMapper.writeValueAsString(errorResponse);
+                                                                            }
+
+                                                                            savedTxn.setResponseSnapshot(responseJson);
+                                                                            return txnRepository.save(savedTxn)
+                                                                                    .map(updated -> responseJson);
+                                                                        } catch (JsonProcessingException e) {
+                                                                            log.error("Error serializing response", e);
+                                                                            return Mono.just("{\"code\":\"UNKNOWN_ERROR\"}");
+                                                                        }
+                                                                    });
+                                                        });
+                                            })
+                                            .switchIfEmpty(Mono.fromCallable(() -> {
+                                                try {
+                                                    return objectMapper.writeValueAsString(
+                                                            ErrorResponse.builder()
+                                                                    .code("INVALID_TOKEN")
+                                                                    .message("Invalid or expired session")
+                                                                    .build()
+                                                    );
+                                                } catch (JsonProcessingException e) {
+                                                    return "{\"code\":\"INVALID_TOKEN\"}";
+                                                }
+                                            }))
+                            );
+                })
+                .switchIfEmpty(Mono.defer(() -> {
+                    // Original BET transaction not found or not successful
+                    log.warn("Rollback rejected: Original BET transaction not found or not successful for debitId={}",
+                            request.getData().getDebitId());
+                    try {
+                        ErrorResponse errorResponse = ErrorResponse.builder()
+                                .code("DEBIT_TRANSACTION_NOT_FOUND")
+                                .message("Related debit transaction was not found")
+                                .build();
+                        return Mono.just(objectMapper.writeValueAsString(errorResponse));
+                    } catch (JsonProcessingException e) {
+                        log.error("Error serializing error response", e);
+                        return Mono.just("{\"code\":\"DEBIT_TRANSACTION_NOT_FOUND\"}");
+                    }
+                }))
                 .onErrorResume(e -> {
                     log.error("Error handling rollback", e);
                     try {
