@@ -257,9 +257,9 @@ public class GoldenEggsIntegrationService {
                             .append("&adaptive=").append(request.getAdaptive() != null ? request.getAdaptive() : "true")
                             .append("&isDemoPlay=").append(request.getIsDemoPlay() != null ? request.getIsDemoPlay() : "false")
                             .append("&token=").append(validationToken)
-                            .append("&lobbyUrl=").append(encodedLobbyUrl)
-                            .append("userCountryCode=").append(request.getUserCountryCode() != null ? request.getUserCountryCode() : "ET")
-                            .append("&brandName=").append(request.getBrandName() != null ? request.getBrandName() : "");
+                            .append("&userCountryCode=ET")
+                            .append("&brandName=").append(request.getBrandName() != null ? request.getBrandName() : "")
+                            .append("&lobbyUrl=").append(encodedLobbyUrl);
 
                     // Add optional userCountryCode if provided
 //                    if (request.getUserCountryCode() != null && !request.getUserCountryCode().isEmpty()) {
