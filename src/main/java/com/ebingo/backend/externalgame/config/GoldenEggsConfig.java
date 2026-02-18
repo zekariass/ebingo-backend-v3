@@ -15,9 +15,9 @@ public class GoldenEggsConfig {
     private String aggregatorId;
     private String apiBaseUrl = "https://api.golden-eggs.games";
     private String signatureSecret;
-    private Integer authTokenTtlMinutes = 30;
+    private Integer authTokenTtlMinutes = 60;
     private Integer sessionTokenTtlMinutes = 120;
-    private Integer launchTokenTtlMinutes = 20;
+    private Integer launchTokenTtlMinutes = 60;
     private Integer initDataMaxAgeSeconds = 600; // 10 minutes
 
     @Bean

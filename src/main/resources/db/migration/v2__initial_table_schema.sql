@@ -85,6 +85,7 @@ CREATE TABLE room (
     bot_allowed BOOLEAN DEFAULT TRUE,
     min_bots INT DEFAULT 2,
     max_bots INT DEFAULT 2,
+    max_cards INT DEFAULT 1,
     commission_rate NUMERIC(5, 2) DEFAULT 0.2,
     agent_id BIGINT NOT NULL, -- NEW
     created_by BIGINT,

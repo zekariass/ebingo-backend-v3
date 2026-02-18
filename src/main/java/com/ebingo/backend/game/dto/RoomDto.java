@@ -38,6 +38,8 @@ public class RoomDto {
 
     private Integer maxBots;
 
+    private Integer maxCards;
+
     private Long createdBy;
 
     private Instant createdAt;

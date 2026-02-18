@@ -25,6 +25,7 @@ public class RoomMapper {
                 .botAllowed(room.getBotAllowed())
                 .minBots(room.getMinBots())
                 .maxBots(room.getMaxBots())
+                .maxCards(room.getMaxCards())
                 .createdBy(room.getCreatedBy())
                 .createdAt(room.getCreatedAt())
                 .updatedAt(room.getUpdatedAt())
@@ -47,6 +48,7 @@ public class RoomMapper {
                 .botAllowed(room.getBotAllowed())
                 .minBots(room.getMinBots())
                 .maxBots(room.getMaxBots())
+                .maxCards(room.getMaxCards())
                 .cardPoolJson(room.getCardPoolJson())
                 .allCardIdsJson(room.getAllCardIdsJson())
                 .createdBy(room.getCreatedBy())
@@ -75,6 +77,7 @@ public class RoomMapper {
         room.setMaxBots(roomDto.getMaxBots());
         room.setAllCardIdsJson(roomDto.getAllCardIdsJson());
         room.setCardPoolJson(roomDto.getCardPoolJson());
+        room.setMaxCards(roomDto.getMaxCards());
         room.setCreatedBy(roomDto.getCreatedBy());
         room.setCreatedAt(roomDto.getCreatedAt());
         room.setUpdatedAt(roomDto.getUpdatedAt());
@@ -118,6 +121,7 @@ public class RoomMapper {
                 .botAllowed(room.getBotAllowed())
                 .minBots(room.getMinBots())
                 .maxBots(room.getMaxBots())
+                .maxCards(room.getMaxCards())
                 .createdBy(room.getCreatedBy())
                 .createdAt(room.getCreatedAt())
                 .updatedAt(room.getUpdatedAt())
@@ -139,6 +143,7 @@ public class RoomMapper {
         room.setBotAllowed(roomDto.getBotAllowed());
         room.setMinBots(roomDto.getMinBots());
         room.setMaxBots(roomDto.getMaxBots());
+        room.setMaxCards(roomDto.getMaxCards());
         room.setStatus(roomDto.getStatus());
 
         return room;
@@ -156,6 +161,7 @@ public class RoomMapper {
         existingRoom.setBotAllowed(roomDto.getBotAllowed());
         existingRoom.setMinBots(roomDto.getMinBots());
         existingRoom.setMaxBots(roomDto.getMaxBots());
+        existingRoom.setMaxCards(roomDto.getMaxCards());
 
 //        return existingRoom;
     }

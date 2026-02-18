@@ -38,5 +38,7 @@ public class RoomUpdateDto {
 
     private Integer maxBots;
 
+    private Integer maxCards;
+
 
 }

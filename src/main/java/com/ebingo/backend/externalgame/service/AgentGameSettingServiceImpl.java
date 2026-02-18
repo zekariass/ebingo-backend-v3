@@ -5,7 +5,6 @@ import com.ebingo.backend.externalgame.dto.UpdateAgentGameModesRequest;
 import com.ebingo.backend.externalgame.entity.AgentGameSetting;
 import com.ebingo.backend.externalgame.mapper.AgentGameSettingMapper;
 import com.ebingo.backend.externalgame.repository.AgentGameSettingRepository;
-import com.ebingo.backend.system.exceptions.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -53,9 +52,9 @@ public class AgentGameSettingServiceImpl implements AgentGameSettingService {
                 .distinct()
                 .collect(Collectors.toList());
 
-        if (normalizedGameModes.isEmpty()) {
-            return Mono.error(new IllegalArgumentException("At least one valid game mode must be specified"));
-        }
+//        if (normalizedGameModes.isEmpty()) {
+//            return Mono.error(new IllegalArgumentException("At least one valid game mode must be specified"));
+//        }
 
         return repository.findByAgentId(request.getAgentId())
                 .flatMap(existing -> {
@@ -74,9 +73,9 @@ public class AgentGameSettingServiceImpl implements AgentGameSettingService {
                     return repository.save(newSetting);
                 }))
                 .map(AgentGameSettingMapper::toDto)
-                .doOnSuccess(dto -> log.info("Successfully updated game modes for agent {}: {}", 
+                .doOnSuccess(dto -> log.info("Successfully updated game modes for agent {}: {}",
                         request.getAgentId(), dto.getGameModes()))
-                .doOnError(e -> log.error("Failed to update game modes for agent {}: {}", 
+                .doOnError(e -> log.error("Failed to update game modes for agent {}: {}",
                         request.getAgentId(), e.getMessage()));
     }
 
@@ -98,7 +97,7 @@ public class AgentGameSettingServiceImpl implements AgentGameSettingService {
                             .anyMatch(mode -> mode.equalsIgnoreCase(normalizedGameMode));
                 })
                 .defaultIfEmpty(false)
-                .doOnSuccess(enabled -> log.debug("Game mode '{}' enabled for agent {}: {}", 
+                .doOnSuccess(enabled -> log.debug("Game mode '{}' enabled for agent {}: {}",
                         normalizedGameMode, agentId, enabled));
     }
 

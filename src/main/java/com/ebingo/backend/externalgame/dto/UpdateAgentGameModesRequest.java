@@ -1,7 +1,6 @@
 package com.ebingo.backend.externalgame.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -23,7 +22,7 @@ public class UpdateAgentGameModesRequest {
     @JsonProperty("agentId")
     private Long agentId;
 
-    @NotEmpty(message = "At least one game mode must be specified")
+    //    @NotEmpty(message = "At least one game mode must be specified")
     @JsonProperty("gameModes")
     private List<String> gameModes;
 }

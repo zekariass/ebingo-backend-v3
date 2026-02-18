@@ -52,6 +52,9 @@ public class Room {
 
     private BigDecimal commissionRate;
 
+    @Column("max_cards")
+    private Integer maxCards = 1;
+
     @Column("created_by")
     private Long createdBy;
 

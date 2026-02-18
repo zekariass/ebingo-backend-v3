@@ -38,6 +38,8 @@ public class RoomInternalDto {
 
     private Integer maxBots;
 
+    private Integer maxCards;
+
     private String cardPoolJson;
 
     private String allCardIdsJson;

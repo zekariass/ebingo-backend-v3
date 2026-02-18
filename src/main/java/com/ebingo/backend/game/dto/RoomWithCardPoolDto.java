@@ -43,6 +43,8 @@ public class RoomWithCardPoolDto {
 
     private Integer maxBots;
 
+    private Integer maxCards;
+
     private Long createdBy;
 
     private Instant createdAt;
