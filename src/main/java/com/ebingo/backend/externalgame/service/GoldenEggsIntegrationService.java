@@ -258,12 +258,13 @@ public class GoldenEggsIntegrationService {
                             .append("&isDemoPlay=").append(request.getIsDemoPlay() != null ? request.getIsDemoPlay() : "false")
                             .append("&token=").append(validationToken)
                             .append("&lobbyUrl=").append(encodedLobbyUrl)
+                            .append("userCountryCode=").append(request.getUserCountryCode() != null ? request.getUserCountryCode() : "ET")
                             .append("&brandName=").append(request.getBrandName() != null ? request.getBrandName() : "");
 
                     // Add optional userCountryCode if provided
-                    if (request.getUserCountryCode() != null && !request.getUserCountryCode().isEmpty()) {
-                        urlBuilder.append("&userCountryCode=").append(request.getUserCountryCode());
-                    }
+//                    if (request.getUserCountryCode() != null && !request.getUserCountryCode().isEmpty()) {
+//                        urlBuilder.append("&userCountryCode=").append(request.getUserCountryCode());
+//                    }
 
                     String gameUrl = urlBuilder.toString();
 

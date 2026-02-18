@@ -30,5 +30,7 @@ public class LaunchRequest {
     private String lang;
     private Boolean adaptive;
     private Boolean isDemoPlay;
+
+    @NotBlank(message = "User country code is required")
     private String userCountryCode; // ISO 3166-1 alpha-2 country code (e.g., TR, US)
 }
