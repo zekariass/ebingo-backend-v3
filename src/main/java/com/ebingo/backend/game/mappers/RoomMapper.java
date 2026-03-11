@@ -26,6 +26,11 @@ public class RoomMapper {
                 .minBots(room.getMinBots())
                 .maxBots(room.getMaxBots())
                 .maxCards(room.getMaxCards())
+                .minDraws(room.getMinDraws())
+                .maxDraws(room.getMaxDraws())
+                .fakeWinnerId(room.getFakeWinnerId())
+                .fakeWinnerTelegramId(room.getFakeWinnerTelegramId())
+                .fakeWinEnabled(room.getFakeWinEnabled())
                 .createdBy(room.getCreatedBy())
                 .createdAt(room.getCreatedAt())
                 .updatedAt(room.getUpdatedAt())
@@ -51,6 +56,11 @@ public class RoomMapper {
                 .maxCards(room.getMaxCards())
                 .cardPoolJson(room.getCardPoolJson())
                 .allCardIdsJson(room.getAllCardIdsJson())
+                .minDraws(room.getMinDraws())
+                .maxDraws(room.getMaxDraws())
+                .fakeWinnerId(room.getFakeWinnerId())
+                .fakeWinnerTelegramId(room.getFakeWinnerTelegramId())
+                .fakeWinEnabled(room.getFakeWinEnabled())
                 .createdBy(room.getCreatedBy())
                 .createdAt(room.getCreatedAt())
                 .updatedAt(room.getUpdatedAt())
@@ -78,6 +88,11 @@ public class RoomMapper {
         room.setAllCardIdsJson(roomDto.getAllCardIdsJson());
         room.setCardPoolJson(roomDto.getCardPoolJson());
         room.setMaxCards(roomDto.getMaxCards());
+        room.setMinDraws(roomDto.getMinDraws());
+        room.setMaxDraws(roomDto.getMaxDraws());
+        room.setFakeWinnerId(roomDto.getFakeWinnerId());
+        room.setFakeWinnerTelegramId(roomDto.getFakeWinnerTelegramId());
+        room.setFakeWinEnabled(roomDto.getFakeWinEnabled());
         room.setCreatedBy(roomDto.getCreatedBy());
         room.setCreatedAt(roomDto.getCreatedAt());
         room.setUpdatedAt(roomDto.getUpdatedAt());
@@ -122,6 +137,11 @@ public class RoomMapper {
                 .minBots(room.getMinBots())
                 .maxBots(room.getMaxBots())
                 .maxCards(room.getMaxCards())
+                .minDraws(room.getMinDraws())
+                .maxDraws(room.getMaxDraws())
+                .fakeWinnerId(room.getFakeWinnerId())
+                .fakeWinnerTelegramId(room.getFakeWinnerTelegramId())
+                .fakeWinEnabled(room.getFakeWinEnabled())
                 .createdBy(room.getCreatedBy())
                 .createdAt(room.getCreatedAt())
                 .updatedAt(room.getUpdatedAt())
@@ -145,6 +165,9 @@ public class RoomMapper {
         room.setMaxBots(roomDto.getMaxBots());
         room.setMaxCards(roomDto.getMaxCards());
         room.setStatus(roomDto.getStatus());
+        room.setMinDraws(roomDto.getMinDraws());
+        room.setMaxDraws(roomDto.getMaxDraws());
+        room.setFakeWinEnabled(roomDto.getFakeWinEnabled());
 
         return room;
     }
@@ -162,6 +185,9 @@ public class RoomMapper {
         existingRoom.setMinBots(roomDto.getMinBots());
         existingRoom.setMaxBots(roomDto.getMaxBots());
         existingRoom.setMaxCards(roomDto.getMaxCards());
+        existingRoom.setMinDraws(roomDto.getMinDraws());
+        existingRoom.setMaxDraws(roomDto.getMaxDraws());
+        existingRoom.setFakeWinEnabled(roomDto.getFakeWinEnabled());
 
 //        return existingRoom;
     }

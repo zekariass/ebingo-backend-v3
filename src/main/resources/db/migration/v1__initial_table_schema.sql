@@ -58,6 +58,13 @@ CREATE TABLE room (
     bot_allowed BOOLEAN DEFAULT TRUE,
     min_bots INT DEFAULT 2,
     max_bots INT DEFAULT 2,
+    -- new
+    min_draws INT DEFAULT 6,
+    max_draws INT DEFAULT 10,
+    fake_winner_id BIGINT,
+    fake_winner_telegram_id BIGINT,
+    fake_win_enabled BOOLEAN DEFAULT FALSE,
+    --
     commission_rate NUMERIC(5, 2) DEFAULT 0.2,
     created_by BIGINT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

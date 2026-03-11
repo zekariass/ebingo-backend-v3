@@ -50,6 +50,18 @@ public class Room {
 
     private Integer maxBots;
 
+    // new
+    private Integer minDraws;
+
+    private Integer maxDraws;
+
+    private Long fakeWinnerId; // pk
+
+    private Long fakeWinnerTelegramId;
+    
+    private Boolean fakeWinEnabled;
+    //    ======
+
     private BigDecimal commissionRate;
 
     @Column("max_cards")

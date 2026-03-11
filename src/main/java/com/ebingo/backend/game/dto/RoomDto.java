@@ -40,6 +40,16 @@ public class RoomDto {
 
     private Integer maxCards;
 
+    private Integer minDraws;
+
+    private Integer maxDraws;
+
+    private Long fakeWinnerId; // pk
+
+    private Long fakeWinnerTelegramId;
+
+    private Boolean fakeWinEnabled;
+
     private Long createdBy;
 
     private Instant createdAt;

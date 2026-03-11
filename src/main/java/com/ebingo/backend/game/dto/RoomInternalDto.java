@@ -44,6 +44,16 @@ public class RoomInternalDto {
 
     private String allCardIdsJson;
 
+    private Integer minDraws;
+
+    private Integer maxDraws;
+
+    private Long fakeWinnerId; // pk
+
+    private Long fakeWinnerTelegramId;
+
+    private Boolean fakeWinEnabled;
+
     private Long createdBy;
 
     private Instant createdAt;

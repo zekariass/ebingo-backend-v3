@@ -40,5 +40,11 @@ public class RoomUpdateDto {
 
     private Integer maxCards;
 
+    private Integer minDraws;
+
+    private Integer maxDraws;
+
+    private Boolean fakeWinEnabled;
+
 
 }

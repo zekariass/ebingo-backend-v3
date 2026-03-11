@@ -50,4 +50,10 @@ public class RoomCreateDto {
     private Integer maxCards;
 
     private RoomStatus status;
+
+    private Integer minDraws;
+
+    private Integer maxDraws;
+
+    private Boolean fakeWinEnabled;
 }
