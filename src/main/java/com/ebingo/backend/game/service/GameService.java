@@ -1184,13 +1184,13 @@ public class GameService {
                                                     Collections.shuffle(primary, random);
 
                                                     // Remaining 1–75 not in card
-                                                    List<Integer> remaining = IntStream.rangeClosed(1, 75)
+                                                    List<Integer> remaining = IntStream.rangeClosed(1, drawIteration)
                                                             .filter(n -> !cardNumbers.contains(n))
                                                             .boxed()
                                                             .collect(Collectors.toList());
                                                     Collections.shuffle(remaining, random);
 
-                                                    List<Integer> finalSequence = new ArrayList<>(75);
+                                                    List<Integer> finalSequence = new ArrayList<>(drawIteration);
                                                     finalSequence.addAll(primary);
                                                     finalSequence.addAll(remaining);
 
@@ -1237,7 +1237,7 @@ public class GameService {
     }
 
     private List<Integer> generateNormal75Draw(Random random) {
-        List<Integer> all = IntStream.rangeClosed(1, 75).boxed().collect(Collectors.toList());
+        List<Integer> all = IntStream.rangeClosed(1, drawIteration).boxed().collect(Collectors.toList());
         Collections.shuffle(all, random);
         return all;
     }
@@ -1701,7 +1701,7 @@ public class GameService {
     public Mono<Void> markNumber(Long roomId, Long gameId, String userId, Map<String, Object> payload) {
         String cardId = (String) payload.get("cardId");
         Integer number = (Integer) payload.get("number");
-        if (cardId == null || cardId.isBlank() || !payload.containsKey("number") || number == null || number < 1 || number > 75) {
+        if (cardId == null || cardId.isBlank() || !payload.containsKey("number") || number == null || number < 1 || number > drawIteration) {
             return publisher.publishUserEvent(userId, Map.of(
                     "type", "error",
                     "payload", Map.of(
@@ -1728,7 +1728,7 @@ public class GameService {
     public Mono<Void> unmarkNumber(Long roomId, Long gameId, String userId, Map<String, Object> payload) {
         String cardId = (String) payload.get("cardId");
         Integer number = (Integer) payload.get("number");
-        if (cardId == null || cardId.isBlank() || !payload.containsKey("number") || number == null || number < 1 || number > 75) {
+        if (cardId == null || cardId.isBlank() || !payload.containsKey("number") || number == null || number < 1 || number > drawIteration) {
             return publisher.publishUserEvent(userId, Map.of(
                     "type", "error",
                     "payload", Map.of(

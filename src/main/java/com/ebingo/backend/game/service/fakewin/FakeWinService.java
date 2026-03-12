@@ -19,6 +19,7 @@ import org.springframework.data.redis.connection.ReactiveSubscription.Message;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import org.springframework.stereotype.Service;
 import reactor.core.Disposable;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.security.SecureRandom;
@@ -37,7 +38,8 @@ public class FakeWinService {
     private final ReactiveStringRedisTemplate redisTemplate;
 
     private static final int DEFAULT_MIN_DRAWS = 6;
-    private static final int DEFAULT_MAX_DRAWS = 10;
+    private static final int DEFAULT_MAX_DRAWS = 12;
+    private static final Duration ROOM_REFRESH_INTERVAL = Duration.ofMinutes(5);
     private static final SecureRandom random = new SecureRandom();
 
     private final Map<Long, RoomFakeWinRuntime> runtimes = new ConcurrentHashMap<>();
@@ -55,15 +57,45 @@ public class FakeWinService {
         log.info("FakeWinService initializing after application ready...");
 
         Mono.delay(Duration.ofSeconds(2))
-                .then(roomService.getAllRoomsWIthCardPoolForAutoService()
-                        .filter(RoomInternalDto::getBotAllowed)
-                        .filter(room -> Boolean.TRUE.equals(room.getFakeWinEnabled()))
-                        .doOnNext(this::ensureRoomRuntime)
-                        .then())
+                .then(refreshRoomsFromDb())
                 .subscribe(
                         v -> log.info("FakeWinService bootstrap complete"),
                         e -> log.error("FakeWinService bootstrap failure", e)
                 );
+
+        // Periodic refresh: re-fetch room data from DB every 5 minutes
+        Flux.interval(ROOM_REFRESH_INTERVAL)
+                .flatMap(tick -> refreshRoomsFromDb()
+                        .onErrorResume(e -> {
+                            log.error("FakeWinService periodic room refresh failed: {}", e.getMessage());
+                            return Mono.empty();
+                        }))
+                .subscribe();
+    }
+
+    private Mono<Void> refreshRoomsFromDb() {
+        return roomService.getAllRoomsWIthCardPoolForAutoService()
+                .filter(RoomInternalDto::getBotAllowed)
+                .collectList()
+                .doOnNext(rooms -> {
+                    Set<Long> activeRoomIds = new HashSet<>();
+                    for (RoomInternalDto room : rooms) {
+                        if (Boolean.TRUE.equals(room.getFakeWinEnabled())) {
+                            ensureRoomRuntime(room);
+                            activeRoomIds.add(room.getId());
+                        }
+                    }
+                    // Remove runtimes for rooms that no longer have fakeWin enabled
+                    runtimes.keySet().removeIf(roomId -> {
+                        if (!activeRoomIds.contains(roomId)) {
+                            log.info("FakeWinService removing runtime for room {} (fakeWin disabled or room removed)", roomId);
+                            return true;
+                        }
+                        return false;
+                    });
+                    log.info("FakeWinService refreshed {} rooms from DB, {} active runtimes", rooms.size(), runtimes.size());
+                })
+                .then();
     }
 
     private void ensureRoomRuntime(RoomInternalDto room) {
@@ -102,11 +134,11 @@ public class FakeWinService {
         int calculateTargetDrawCount() {
             Integer minDraws = room.getMinDraws() != null ? room.getMinDraws() : DEFAULT_MIN_DRAWS;
             Integer maxDraws = room.getMaxDraws() != null ? room.getMaxDraws() : DEFAULT_MAX_DRAWS;
-            
+
             if (minDraws.equals(maxDraws)) {
                 return minDraws;
             }
-            
+
             return minDraws + random.nextInt(maxDraws - minDraws + 1);
         }
 
@@ -339,7 +371,7 @@ public class FakeWinService {
             Map<BingoColumn, List<Integer>> drawnByColumn = categorizeDrawnNumbers(drawnNumbers);
 
             // All drawn numbers are placed on the card and marked
-            // Winning strategy is randomly chosen: ROW or DIAGONAL
+            // Winning strategy randomly chosen from available: ROW, DIAGONAL, or COLUMN
             boolean hasB = !drawnByColumn.get(BingoColumn.B).isEmpty();
             boolean hasI = !drawnByColumn.get(BingoColumn.I).isEmpty();
             boolean hasN = !drawnByColumn.get(BingoColumn.N).isEmpty();
@@ -348,45 +380,64 @@ public class FakeWinService {
 
             boolean canWinMiddleRow = hasB && hasI && hasG && hasO;
             boolean canWinOtherRow = canWinMiddleRow && hasN;
-            // Diagonal needs: B, I, G, O (N center is free space)
             boolean canWinDiagonal = hasB && hasI && hasG && hasO;
 
-            if (!canWinMiddleRow && !canWinDiagonal) {
-                log.warn("Room {}: Cannot build winning card - missing columns B={} I={} N={} G={} O={}",
-                        roomId, hasB, hasI, hasN, hasG, hasO);
+            // Check for column win: 5 drawn numbers for B/I/G/O, 4 for N (free space)
+            List<BingoColumn> columnWinCandidates = new ArrayList<>();
+            for (BingoColumn col : BingoColumn.values()) {
+                int required = (col == BingoColumn.N) ? 4 : 5;
+                if (drawnByColumn.get(col).size() >= required) {
+                    columnWinCandidates.add(col);
+                }
+            }
+            boolean canWinColumn = !columnWinCandidates.isEmpty();
+
+            // Collect available strategies
+            List<String> strategies = new ArrayList<>();
+            if (canWinColumn) strategies.add("COLUMN");
+            if (canWinOtherRow) strategies.add("ROW");
+            else if (canWinMiddleRow) strategies.add("ROW_MIDDLE");
+            if (canWinDiagonal) strategies.add("DIAGONAL");
+
+            if (strategies.isEmpty()) {
+                log.warn("Room {}: Cannot build winning card - columns B={} I={} N={} G={} O={}, colWin={}",
+                        roomId, drawnByColumn.get(BingoColumn.B).size(), drawnByColumn.get(BingoColumn.I).size(),
+                        drawnByColumn.get(BingoColumn.N).size(), drawnByColumn.get(BingoColumn.G).size(),
+                        drawnByColumn.get(BingoColumn.O).size(), columnWinCandidates);
                 return null;
             }
 
-            // Randomly pick strategy: ROW or DIAGONAL
-            // ~40% chance diagonal, ~60% chance row
-            boolean useDiagonal = canWinDiagonal && random.nextInt(5) < 2;
+            String chosenStrategy = strategies.get(random.nextInt(strategies.size()));
 
             String winType;
-            // winPositions[colIndex] = row index for the winning cell in that column
-            int[] winPositions = new int[5]; // B=0, I=1, N=2, G=3, O=4
+            BingoColumn winningColumn = null;   // set for COLUMN strategy
+            int[] winPositions = null;          // set for ROW/DIAGONAL strategy
 
-            if (useDiagonal) {
-                // Two diagonals: top-left to bottom-right (0,1,2,3,4) or top-right to bottom-left (4,3,2,1,0)
-                boolean topLeft = random.nextBoolean();
-                if (topLeft) {
-                    winPositions = new int[]{0, 1, 2, 3, 4};
-                    winType = "DIAGONAL_TL_BR";
-                } else {
-                    winPositions = new int[]{4, 3, 2, 1, 0};
-                    winType = "DIAGONAL_TR_BL";
+            switch (chosenStrategy) {
+                case "COLUMN" -> {
+                    winningColumn = columnWinCandidates.get(random.nextInt(columnWinCandidates.size()));
+                    winType = "COLUMN_" + winningColumn.name();
                 }
-            } else {
-                // ROW strategy
-                int winningRow;
-                if (canWinOtherRow) {
-                    winningRow = random.nextInt(5);
-                } else {
-                    winningRow = 2; // middle row (N is free)
+                case "DIAGONAL" -> {
+                    boolean topLeft = random.nextBoolean();
+                    if (topLeft) {
+                        winPositions = new int[]{0, 1, 2, 3, 4};
+                        winType = "DIAGONAL_TL_BR";
+                    } else {
+                        winPositions = new int[]{4, 3, 2, 1, 0};
+                        winType = "DIAGONAL_TR_BL";
+                    }
                 }
-                for (int i = 0; i < 5; i++) {
-                    winPositions[i] = winningRow;
+                case "ROW_MIDDLE" -> {
+                    winPositions = new int[]{2, 2, 2, 2, 2};
+                    winType = "ROW_2";
                 }
-                winType = "ROW_" + winningRow;
+                default -> { // ROW
+                    int winningRow = random.nextInt(5);
+                    winPositions = new int[5];
+                    for (int i = 0; i < 5; i++) winPositions[i] = winningRow;
+                    winType = "ROW_" + winningRow;
+                }
             }
 
             BingoColumn[] columns = BingoColumn.values();
@@ -396,19 +447,26 @@ public class FakeWinService {
                 BingoColumn col = columns[colIdx];
                 List<Integer> drawnInCol = new ArrayList<>(drawnByColumn.get(col));
                 List<Integer> colList = new ArrayList<>(Collections.nCopies(5, 0));
-                int winRow = winPositions[colIdx];
 
-                // 1) Place a drawn number in the winning position
-                if (col == BingoColumn.N && winRow == 2) {
-                    // Free space — already 0, no drawn number needed
-                } else {
-                    int winNum = drawnInCol.remove(0);
-                    colList.set(winRow, winNum);
+                // 1) Place mandatory winning cells
+                if (winningColumn != null && col == winningColumn) {
+                    // COLUMN WIN: fill ALL non-free rows with drawn numbers
+                    for (int row = 0; row < 5; row++) {
+                        if (col == BingoColumn.N && row == 2) continue; // free space
+                        colList.set(row, drawnInCol.remove(0));
+                    }
+                } else if (winPositions != null) {
+                    // ROW/DIAGONAL: place drawn number at winning position
+                    int winRow = winPositions[colIdx];
+                    if (!(col == BingoColumn.N && winRow == 2)) {
+                        int winNum = drawnInCol.remove(0);
+                        colList.set(winRow, winNum);
+                    }
                 }
 
                 // 2) Fill remaining slots with other drawn numbers from this column
                 for (int row = 0; row < 5; row++) {
-                    if (row == winRow) continue;
+                    if (colList.get(row) != 0) continue;
                     if (col == BingoColumn.N && row == 2) continue;
                     if (drawnInCol.isEmpty()) break;
                     colList.set(row, drawnInCol.remove(0));
@@ -463,12 +521,12 @@ public class FakeWinService {
             log.info("Room {} game {}: Clearing FakeWin Redis state", roomId, gameId);
 
             return Mono.when(
-                    redisTemplate.delete(drawnKey),
-                    redisTemplate.delete(triggeredKey)
-            )
-            .doOnSuccess(v -> log.info("Room {} game {}: FakeWin Redis state cleared successfully", roomId, gameId))
-            .doOnError(e -> log.error("Room {} game {}: Failed to clear FakeWin Redis state: {}", roomId, gameId, e.getMessage()))
-            .then();
+                            redisTemplate.delete(drawnKey),
+                            redisTemplate.delete(triggeredKey)
+                    )
+                    .doOnSuccess(v -> log.info("Room {} game {}: FakeWin Redis state cleared successfully", roomId, gameId))
+                    .doOnError(e -> log.error("Room {} game {}: Failed to clear FakeWin Redis state: {}", roomId, gameId, e.getMessage()))
+                    .then();
         }
 
         Map<String, Object> buildBingoPayload(Long gameId, CardInfo cardInfo, String fakeUserId, GamePattern pattern) {
