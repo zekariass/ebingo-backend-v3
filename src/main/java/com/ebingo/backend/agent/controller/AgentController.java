@@ -1,14 +1,12 @@
 package com.ebingo.backend.agent.controller;
 
 import com.ebingo.backend.agent.dto.agent.AgentDto;
-import com.ebingo.backend.agent.dto.agent.AgentUpdateDto;
 import com.ebingo.backend.agent.service.AgentService;
 import com.ebingo.backend.common.dto.ApiResponse;
 import com.ebingo.backend.common.dto.PageResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -91,45 +89,45 @@ public class AgentController {
                 .map(ResponseEntity::ok);
     }
 
-    @PutMapping("/{agentId}")
-    @Operation(summary = "Update agent by ID", description = "Update agent by ID")
-    public Mono<ResponseEntity<ApiResponse<AgentDto>>> updateAgentById(
-            @Parameter(required = true, description = "Agent ID") @PathVariable Long agentId,
-            @Parameter(required = true, description = "Agent update data") @Valid @RequestBody AgentUpdateDto agentUpdateDto,
-            ServerWebExchange exchange
-    ) {
-        log.info("Updating agent with ID: {}", agentId);
-        return agentService.updateAgentById(agentId, agentUpdateDto)
-                .map(agent -> ResponseEntity.ok(
-                        ApiResponse.<AgentDto>builder()
-                                .statusCode(HttpStatus.OK.value())
-                                .success(true)
-                                .message("Agent updated successfully")
-                                .path(exchange.getRequest().getPath().value())
-                                .timestamp(Instant.now())
-                                .data(agent)
-                                .build()
-                ));
-    }
+//    @PutMapping("/{agentId}")
+//    @Operation(summary = "Update agent by ID", description = "Update agent by ID")
+//    public Mono<ResponseEntity<ApiResponse<AgentDto>>> updateAgentById(
+//            @Parameter(required = true, description = "Agent ID") @PathVariable Long agentId,
+//            @Parameter(required = true, description = "Agent update data") @Valid @RequestBody AgentUpdateDto agentUpdateDto,
+//            ServerWebExchange exchange
+//    ) {
+//        log.info("Updating agent with ID: {}", agentId);
+//        return agentService.updateAgentById(agentId, agentUpdateDto)
+//                .map(agent -> ResponseEntity.ok(
+//                        ApiResponse.<AgentDto>builder()
+//                                .statusCode(HttpStatus.OK.value())
+//                                .success(true)
+//                                .message("Agent updated successfully")
+//                                .path(exchange.getRequest().getPath().value())
+//                                .timestamp(Instant.now())
+//                                .data(agent)
+//                                .build()
+//                ));
+//    }
 
-    @GetMapping("/search")
-    @Operation(summary = "Search agents", description = "Search agents by name, bot username, contact name, phone number, or code")
-    public Mono<ResponseEntity<ApiResponse<List<AgentDto>>>> searchAgents(
-            @Parameter(required = true, description = "Search term") @RequestParam String searchTerm,
-            ServerWebExchange exchange
-    ) {
-        log.info("Searching agents with term: {}", searchTerm);
-        return agentService.searchAgents(searchTerm)
-                .collectList()
-                .map(agents -> ApiResponse.<List<AgentDto>>builder()
-                        .statusCode(HttpStatus.OK.value())
-                        .success(true)
-                        .message("Agents search completed successfully")
-                        .path(exchange.getRequest().getPath().value())
-                        .timestamp(Instant.now())
-                        .data(agents)
-                        .build()
-                )
-                .map(ResponseEntity::ok);
-    }
+//    @GetMapping("/search")
+//    @Operation(summary = "Search agents", description = "Search agents by name, bot username, contact name, phone number, or code")
+//    public Mono<ResponseEntity<ApiResponse<List<AgentDto>>>> searchAgents(
+//            @Parameter(required = true, description = "Search term") @RequestParam String searchTerm,
+//            ServerWebExchange exchange
+//    ) {
+//        log.info("Searching agents with term: {}", searchTerm);
+//        return agentService.searchAgents(searchTerm)
+//                .collectList()
+//                .map(agents -> ApiResponse.<List<AgentDto>>builder()
+//                        .statusCode(HttpStatus.OK.value())
+//                        .success(true)
+//                        .message("Agents search completed successfully")
+//                        .path(exchange.getRequest().getPath().value())
+//                        .timestamp(Instant.now())
+//                        .data(agents)
+//                        .build()
+//                )
+//                .map(ResponseEntity::ok);
+//    }
 }
