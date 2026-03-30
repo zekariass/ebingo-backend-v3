@@ -43,7 +43,7 @@ public class UserProfileServiceImpl implements UserProfileService {
 
         String userProfileKey = CacheKeyUtil.getUserProfileByPhoneAndAgentIdKey(phoneNumber, agentId);
 
-        Mono<UserProfileDto> userProfile = userProfileRepository.findByPhoneNumberAndAgentId(phoneNumber, agentId)
+        Mono<UserProfileDto> userProfile = userProfileRepository.findByPhoneNumberAndAgentIdAndIsDeletedFalse(phoneNumber, agentId)
                 .switchIfEmpty(Mono.error(new ResourceNotFoundException("User not found")))
                 .map(UserProfileMapper::toDto);
 
@@ -117,7 +117,7 @@ public class UserProfileServiceImpl implements UserProfileService {
 
         String userProfileKey = CacheKeyUtil.getUserProfileByPhoneAndAgentIdKey(phoneNumber, agentId);
 
-        Mono<UserProfileDto> userProfile = userProfileRepository.findByPhoneNumberAndAgentId(phoneNumber, agentId)
+        Mono<UserProfileDto> userProfile = userProfileRepository.findByPhoneNumberAndAgentIdAndIsDeletedFalse(phoneNumber, agentId)
                 .map(UserProfileMapper::toDto)
                 .switchIfEmpty(Mono.error(new ResourceNotFoundException("User not found")))
                 .doOnSubscribe(s -> log.info("Fetching user profile by phone number"))
@@ -154,7 +154,7 @@ public class UserProfileServiceImpl implements UserProfileService {
 
         String userProfileKey = CacheKeyUtil.getUserProfileByTelegramIdAndAgentIdKey(telegramId, agentId);
 
-        Mono<UserProfileDto> userProfile = userProfileRepository.findByTelegramIdAndAgentId(telegramId, agentId)
+        Mono<UserProfileDto> userProfile = userProfileRepository.findByTelegramIdAndAgentIdAndIsDeletedFalse(telegramId, agentId)
                 .map(UserProfileMapper::toDto)
                 .switchIfEmpty(Mono.error(new ResourceNotFoundException("User not found for telegramId: " + telegramId)))
                 .doOnSubscribe(s -> log.info("Fetching user profile for telegramId: {}", telegramId))
@@ -181,7 +181,7 @@ public class UserProfileServiceImpl implements UserProfileService {
 
         cacheService.evict(userProfileByTelegramKey);
 
-        return userProfileRepository.findByTelegramIdAndAgentId(telegramId, agentId)
+        return userProfileRepository.findByTelegramIdAndAgentIdAndIsDeletedFalse(telegramId, agentId)
                 .switchIfEmpty(Mono.error(new ResourceNotFoundException("User not found for telegramId: " + telegramId)))
                 .flatMap(userProfile -> {
 
@@ -213,7 +213,7 @@ public class UserProfileServiceImpl implements UserProfileService {
     public Mono<UserProfileDto> createPassword(CreatePasswordRequestDto request) {
         log.info("Creating password for telegramId: {}", request.getTelegramId());
 
-        return userProfileRepository.findByTelegramIdAndAgentId(request.getTelegramId(), request.getAgentId())
+        return userProfileRepository.findByTelegramIdAndAgentIdAndIsDeletedFalse(request.getTelegramId(), request.getAgentId())
                 .switchIfEmpty(Mono.error(new ResourceNotFoundException("User not found")))
                 .flatMap(user -> {
                     // Hash password using BCrypt
@@ -241,7 +241,7 @@ public class UserProfileServiceImpl implements UserProfileService {
     public Mono<UserProfileDto> updatePassword(UpdatePasswordRequestDto request) {
         log.info("Updating password for telegramId: {}", request.getTelegramId());
 
-        return userProfileRepository.findByTelegramIdAndAgentId(request.getTelegramId(), request.getAgentId())
+        return userProfileRepository.findByTelegramIdAndAgentIdAndIsDeletedFalse(request.getTelegramId(), request.getAgentId())
                 .switchIfEmpty(Mono.error(new ResourceNotFoundException("User not found")))
                 .flatMap(user -> {
                     // Verify old password

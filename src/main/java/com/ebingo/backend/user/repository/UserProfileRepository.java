@@ -8,9 +8,9 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 public interface UserProfileRepository extends ReactiveCrudRepository<UserProfile, Long> {
-    Mono<UserProfile> findByPhoneNumberAndAgentId(String phoneNumber, Long agentId);
+    Mono<UserProfile> findByPhoneNumberAndAgentIdAndIsDeletedFalse(String phoneNumber, Long agentId);
 
-    Mono<UserProfile> findByTelegramIdAndAgentId(Long telegramId, Long agentId);
+    Mono<UserProfile> findByTelegramIdAndAgentIdAndIsDeletedFalse(Long telegramId, Long agentId);
 
     @Query("SELECT telegram_id FROM user_profile where is_bot = false AND agent_id = :agentId AND is_deleted = false")
     Flux<Long> findAllUserTelegramIdsByAgentId(Long agentId);

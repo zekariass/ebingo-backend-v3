@@ -161,7 +161,7 @@ public class GoldenEggsIntegrationService {
      * Find existing user or create new one based on Telegram ID
      */
     private Mono<UserProfile> findOrCreateUser(Long telegramUserId, Long agentId, java.util.Map<String, String> telegramParams) {
-        return userProfileRepository.findByTelegramIdAndAgentId(telegramUserId, agentId)
+        return userProfileRepository.findByTelegramIdAndAgentIdAndIsDeletedFalse(telegramUserId, agentId)
                 .switchIfEmpty(Mono.defer(() -> {
                     log.info("Creating new user for telegramId={}, agentId={}", telegramUserId, agentId);
 
