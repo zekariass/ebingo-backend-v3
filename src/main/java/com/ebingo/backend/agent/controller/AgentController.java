@@ -2,6 +2,7 @@ package com.ebingo.backend.agent.controller;
 
 import com.ebingo.backend.agent.dto.agent.AgentDto;
 import com.ebingo.backend.agent.service.AgentService;
+import com.ebingo.backend.common.annotation.RequireAccessToken;
 import com.ebingo.backend.common.dto.ApiResponse;
 import com.ebingo.backend.common.dto.PageResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -22,11 +23,11 @@ import java.util.List;
 @RequestMapping("/api/v1/agents")
 @Tag(name = "Agent Secured Controller", description = "Agent Secured Controller")
 @RequiredArgsConstructor
+@RequireAccessToken
 @Slf4j
 public class AgentController {
 
     private final AgentService agentService;
-
 
     @GetMapping
     @Operation(summary = "Get all agents", description = "Get all agents with pagination")
@@ -75,7 +76,7 @@ public class AgentController {
     @GetMapping("/active")
     @Operation(summary = "Get all active agents", description = "Get all active agents")
     public Mono<ResponseEntity<ApiResponse<List<AgentDto>>>> getAllActiveAgents(ServerWebExchange exchange) {
-        log.info("================================>>: Fetching all active agents");
+//        log.info("================================>>: Fetching all active agents");
         return agentService.getAllActiveAgents()
                 .collectList()
                 .map(agents -> ApiResponse.<List<AgentDto>>builder()
@@ -110,24 +111,24 @@ public class AgentController {
 //                ));
 //    }
 
-//    @GetMapping("/search")
-//    @Operation(summary = "Search agents", description = "Search agents by name, bot username, contact name, phone number, or code")
-//    public Mono<ResponseEntity<ApiResponse<List<AgentDto>>>> searchAgents(
-//            @Parameter(required = true, description = "Search term") @RequestParam String searchTerm,
-//            ServerWebExchange exchange
-//    ) {
-//        log.info("Searching agents with term: {}", searchTerm);
-//        return agentService.searchAgents(searchTerm)
-//                .collectList()
-//                .map(agents -> ApiResponse.<List<AgentDto>>builder()
-//                        .statusCode(HttpStatus.OK.value())
-//                        .success(true)
-//                        .message("Agents search completed successfully")
-//                        .path(exchange.getRequest().getPath().value())
-//                        .timestamp(Instant.now())
-//                        .data(agents)
-//                        .build()
-//                )
-//                .map(ResponseEntity::ok);
-//    }
+    @GetMapping("/search")
+    @Operation(summary = "Search agents", description = "Search agents by name, bot username, contact name, phone number, or code")
+    public Mono<ResponseEntity<ApiResponse<List<AgentDto>>>> searchAgents(
+            @Parameter(required = true, description = "Search term") @RequestParam String searchTerm,
+            ServerWebExchange exchange
+    ) {
+        log.info("Searching agents with term: {}", searchTerm);
+        return agentService.searchAgents(searchTerm)
+                .collectList()
+                .map(agents -> ApiResponse.<List<AgentDto>>builder()
+                        .statusCode(HttpStatus.OK.value())
+                        .success(true)
+                        .message("Agents search completed successfully")
+                        .path(exchange.getRequest().getPath().value())
+                        .timestamp(Instant.now())
+                        .data(agents)
+                        .build()
+                )
+                .map(ResponseEntity::ok);
+    }
 }

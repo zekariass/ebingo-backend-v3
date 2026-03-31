@@ -91,7 +91,7 @@ public class GoldenEggsIntegrationService {
                 .retrieve()
                 .bodyToMono(new ParameterizedTypeReference<List<GameModeDto>>() {
                 })
-                .doOnSuccess(response -> log.debug("Game modes list retrieved successfully {} ", response))
+                .doOnSuccess(response -> log.info("Game modes list retrieved successfully {} ", response))
                 .doOnError(error -> log.error("Error fetching game modes list", error));
     }
 

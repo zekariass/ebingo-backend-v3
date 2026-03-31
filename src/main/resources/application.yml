@@ -59,6 +59,8 @@ management:
       enabled: true
 
 
+endpoints:
+  access-token: ${ENDPOINTS_ACCESS_TOKEN}
 
 
 springdoc:
