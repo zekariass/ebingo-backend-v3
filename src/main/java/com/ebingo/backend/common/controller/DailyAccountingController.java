@@ -1,5 +1,6 @@
 package com.ebingo.backend.common.controller;
 
+import com.ebingo.backend.common.annotation.RequireAccessToken;
 import com.ebingo.backend.common.dto.ApiResponse;
 import com.ebingo.backend.common.dto.DailyAccountingDto;
 import com.ebingo.backend.common.dto.DailyAccountingUpdateDto;
@@ -24,6 +25,7 @@ import java.time.LocalDate;
 @RequestMapping("/api/v1/accounting/daily")
 @Tag(name = "Daily Accounting Controller", description = "Daily Agent Accounting Management")
 @RequiredArgsConstructor
+@RequireAccessToken
 @Slf4j
 public class DailyAccountingController {
 

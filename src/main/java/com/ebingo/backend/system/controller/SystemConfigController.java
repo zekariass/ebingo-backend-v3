@@ -1,5 +1,6 @@
 package com.ebingo.backend.system.controller;
 
+import com.ebingo.backend.common.annotation.RequireAccessToken;
 import com.ebingo.backend.common.dto.ApiResponse;
 import com.ebingo.backend.system.dto.SystemConfigDto;
 import com.ebingo.backend.system.dto.SystemConfigUpdateDto;
@@ -20,6 +21,7 @@ import java.util.List;
 @RequestMapping("/api/v1/system-configs")
 @RequiredArgsConstructor
 @Tag(name = "System Config Endpoints", description = "Endpoints for managing system configurations")
+@RequireAccessToken
 public class SystemConfigController {
 
     private final SystemConfigService systemConfigService;

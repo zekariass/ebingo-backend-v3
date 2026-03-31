@@ -1,5 +1,6 @@
 package com.ebingo.backend.user.controller.secured;
 
+import com.ebingo.backend.common.annotation.RequireAccessToken;
 import com.ebingo.backend.common.dto.ApiResponse;
 import com.ebingo.backend.user.dto.UserIdsResponseDto;
 import com.ebingo.backend.user.dto.UserProfileDto;
@@ -18,6 +19,7 @@ import java.time.Instant;
 @RestController
 @Tag(name = "User Profile", description = "User Profile APIs")
 @RequestMapping("/api/v1/secured/user-profile")
+@RequireAccessToken
 public class UserProfileController {
 
     private final UserProfileService userProfileService;

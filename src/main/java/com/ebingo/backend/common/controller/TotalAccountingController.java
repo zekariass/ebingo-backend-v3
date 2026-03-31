@@ -1,5 +1,6 @@
 package com.ebingo.backend.common.controller;
 
+import com.ebingo.backend.common.annotation.RequireAccessToken;
 import com.ebingo.backend.common.dto.ApiResponse;
 import com.ebingo.backend.common.dto.PageResponse;
 import com.ebingo.backend.common.dto.TotalAccountingDto;
@@ -23,6 +24,7 @@ import java.time.Instant;
 @RequestMapping("/api/v1/accounting/total")
 @Tag(name = "Total Accounting Controller", description = "Total Agent Accounting Management")
 @RequiredArgsConstructor
+@RequireAccessToken
 @Slf4j
 public class TotalAccountingController {
 
@@ -53,7 +55,7 @@ public class TotalAccountingController {
     public Mono<ResponseEntity<ApiResponse<PageResponse<TotalAccountingDto>>>> getAll(
             @Parameter(description = "Page number (0-indexed)") @RequestParam(defaultValue = "0") int page,
             @Parameter(description = "Page size") @RequestParam(defaultValue = "10") int size,
-            @Parameter(description = "Sort by field: id, netIncome, lastSettledAt, createdAt, updatedAt") 
+            @Parameter(description = "Sort by field: id, netIncome, lastSettledAt, createdAt, updatedAt")
             @RequestParam(required = false, defaultValue = "id") String sortBy,
             ServerWebExchange exchange
     ) {
@@ -95,7 +97,7 @@ public class TotalAccountingController {
     @Operation(summary = "Update total accounting by ID", description = "Update a total accounting record")
     public Mono<ResponseEntity<ApiResponse<TotalAccountingDto>>> updateById(
             @Parameter(required = true, description = "Total Accounting ID") @PathVariable Long id,
-            @Parameter(required = true, description = "Total accounting update data") 
+            @Parameter(required = true, description = "Total accounting update data")
             @Valid @RequestBody TotalAccountingUpdateDto updateDto,
             ServerWebExchange exchange
     ) {

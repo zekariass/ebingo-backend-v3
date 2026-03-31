@@ -1,5 +1,6 @@
 package com.ebingo.backend.game.controller.secured;
 
+import com.ebingo.backend.common.annotation.RequireAccessToken;
 import com.ebingo.backend.common.dto.ApiResponse;
 import com.ebingo.backend.common.telegram.TelegramAuthVerifier;
 import com.ebingo.backend.game.dto.RoomCreateDto;
@@ -24,6 +25,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/secured/rooms")
 @Tag(name = "Room Secured Controller", description = "Room Secured Controller")
+@RequireAccessToken
 public class RoomController {
     private final RoomService roomService;
     private final TelegramAuthVerifier telegramAuthVerifier;

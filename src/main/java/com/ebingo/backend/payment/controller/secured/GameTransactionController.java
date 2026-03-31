@@ -1,5 +1,6 @@
 package com.ebingo.backend.payment.controller.secured;
 
+import com.ebingo.backend.common.annotation.RequireAccessToken;
 import com.ebingo.backend.common.dto.ApiResponse;
 import com.ebingo.backend.common.telegram.TelegramAuthVerifier;
 import com.ebingo.backend.payment.dto.GameTransactionDto;
@@ -25,6 +26,7 @@ import java.util.Optional;
 @RequestMapping("/api/v1/secured/game/transaction")
 @RequiredArgsConstructor
 @Tag(name = "Game Transaction Management", description = "Game Transaction Management")
+@RequireAccessToken
 public class GameTransactionController {
 
     private final GameTransactionService gameTransactionService;

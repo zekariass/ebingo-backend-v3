@@ -1,6 +1,7 @@
 package com.ebingo.backend.user.controller._public;
 
 import com.ebingo.backend.common.Util;
+import com.ebingo.backend.common.annotation.RequireAccessToken;
 import com.ebingo.backend.common.dto.ApiResponse;
 import com.ebingo.backend.payment.enums.TransactionType;
 import com.ebingo.backend.payment.service.WalletService;
@@ -34,6 +35,7 @@ import java.util.Map;
 @RestController
 @Tag(name = "User Profile Public Controller", description = "User Profile Public Controller")
 @RequestMapping("/api/v1/public/user-profile")
+@RequireAccessToken
 @Slf4j
 public class UserProfilePublicController {
 

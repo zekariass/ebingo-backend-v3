@@ -1,5 +1,6 @@
 package com.ebingo.backend.externalgame.controller;
 
+import com.ebingo.backend.common.annotation.RequireAccessToken;
 import com.ebingo.backend.common.dto.ApiResponse;
 import com.ebingo.backend.externalgame.dto.AgentGameSettingDto;
 import com.ebingo.backend.externalgame.dto.UpdateAgentGameModesRequest;
@@ -25,6 +26,7 @@ import java.time.Instant;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/external-games/game-settings")
+@RequireAccessToken
 @Tag(name = "Agent Game Settings", description = "Manage agent-specific game configurations")
 public class AgentGameSettingController {
 

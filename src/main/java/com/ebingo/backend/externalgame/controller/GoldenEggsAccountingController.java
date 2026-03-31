@@ -1,5 +1,6 @@
 package com.ebingo.backend.externalgame.controller;
 
+import com.ebingo.backend.common.annotation.RequireAccessToken;
 import com.ebingo.backend.common.dto.ApiResponse;
 import com.ebingo.backend.externalgame.entity.GoldenEggsDailyAccounting;
 import com.ebingo.backend.externalgame.entity.GoldenEggsTotalAccounting;
@@ -11,7 +12,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDate;
@@ -24,6 +24,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/external-games/golden-eggs/accounting")
 @RequiredArgsConstructor
+@RequireAccessToken
 @Slf4j
 public class GoldenEggsAccountingController {
 

@@ -1,5 +1,6 @@
 package com.ebingo.backend.payment.controller.secured;
 
+import com.ebingo.backend.common.annotation.RequireAccessToken;
 import com.ebingo.backend.common.dto.ApiResponse;
 import com.ebingo.backend.common.dto.PageResponse;
 import com.ebingo.backend.common.telegram.AuthenticatedTelegramUser;
@@ -23,6 +24,7 @@ import java.time.Instant;
 @RequestMapping("/api/v1/secured/payments")
 @RequiredArgsConstructor
 @Slf4j
+@RequireAccessToken
 public class PaymentController {
 
     //    private final paymentOrderService paymentOrderService;

@@ -1,5 +1,6 @@
 package com.ebingo.backend.payment.controller.secured;
 
+import com.ebingo.backend.common.annotation.RequireAccessToken;
 import com.ebingo.backend.common.dto.ApiResponse;
 import com.ebingo.backend.common.dto.PageResponse;
 import com.ebingo.backend.payment.dto.*;
@@ -8,7 +9,6 @@ import com.ebingo.backend.payment.enums.TransactionType;
 import com.ebingo.backend.payment.service.PaymentOrderService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import lombok.Builder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -24,6 +24,7 @@ import java.time.Instant;
 @RequestMapping("/api/v1/secured/payment-orders/offline")
 @RequiredArgsConstructor
 @Tag(name = "Payment Orders Endpoint", description = "Payment Orders Endpoint")
+@RequireAccessToken
 public class AdminPaymentOrderController {
 
     private final PaymentOrderService paymentOrderService;
@@ -90,7 +91,7 @@ public class AdminPaymentOrderController {
 //            @AuthenticatedTelegramUser TelegramUser admin,
             ServerWebExchange exchange) {
 
-        log.info(">>>>>>>>>>>>>>>>>: Admin {} is approving withdrawal {}", adminUserId, dto);
+//        log.info(">>>>>>>>>>>>>>>>>: Admin {} is approving withdrawal {}", adminUserId, dto);
 
         return paymentOrderService.confirmWithdrawalByAdmin(dto, adminUserId)
                 .map(txn -> ApiResponse.<PaymentOrderDto>builder()
@@ -145,23 +146,23 @@ public class AdminPaymentOrderController {
 
 
     // Check deposit status@Data
-    @Builder
-    @GetMapping("/check-deposit-status/{providerTxnRef}")
-    public Mono<ResponseEntity<ApiResponse<PaymentOrderDto>>> checkDepositStatusByProviderTxnRef(
-            @PathVariable String providerTxnRef,
-//            @AuthenticatedTelegramUser TelegramUser user,
-            ServerWebExchange exchange
-    ) {
-        return paymentOrderService.checkDepositStatusByProviderTxnRef(providerTxnRef)
-                .map(txn -> ApiResponse.<PaymentOrderDto>builder()
-                        .statusCode(HttpStatus.OK.value())
-                        .success(true)
-                        .message("Deposit status fetched successfully")
-                        .path(exchange.getRequest().getPath().value())
-                        .timestamp(Instant.now())
-                        .data(txn)
-                        .build())
-                .map(ResponseEntity::ok);
-    }
+//    @Builder
+//    @GetMapping("/check-deposit-status/{providerTxnRef}")
+//    public Mono<ResponseEntity<ApiResponse<PaymentOrderDto>>> checkDepositStatusByProviderTxnRef(
+//            @PathVariable String providerTxnRef,
+////            @AuthenticatedTelegramUser TelegramUser user,
+//            ServerWebExchange exchange
+//    ) {
+//        return paymentOrderService.checkDepositStatusByProviderTxnRef(providerTxnRef)
+//                .map(txn -> ApiResponse.<PaymentOrderDto>builder()
+//                        .statusCode(HttpStatus.OK.value())
+//                        .success(true)
+//                        .message("Deposit status fetched successfully")
+//                        .path(exchange.getRequest().getPath().value())
+//                        .timestamp(Instant.now())
+//                        .data(txn)
+//                        .build())
+//                .map(ResponseEntity::ok);
+//    }
 
 }

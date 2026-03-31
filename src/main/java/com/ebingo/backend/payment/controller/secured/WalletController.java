@@ -1,5 +1,6 @@
 package com.ebingo.backend.payment.controller.secured;
 
+import com.ebingo.backend.common.annotation.RequireAccessToken;
 import com.ebingo.backend.common.dto.ApiResponse;
 import com.ebingo.backend.common.telegram.TelegramAuthService;
 import com.ebingo.backend.payment.dto.WalletDto;
@@ -26,6 +27,7 @@ import java.time.Instant;
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/secured/wallet")
 @Tag(name = "Wallet Secured Controller", description = "Wallet Secured Controller")
+@RequireAccessToken
 public class WalletController {
 
     private final WalletService walletService;

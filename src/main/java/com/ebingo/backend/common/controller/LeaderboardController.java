@@ -1,5 +1,6 @@
 package com.ebingo.backend.common.controller;
 
+import com.ebingo.backend.common.annotation.RequireAccessToken;
 import com.ebingo.backend.common.dto.ApiResponse;
 import com.ebingo.backend.common.dto.DailyLeaderboardDto;
 import com.ebingo.backend.common.dto.PageResponse;
@@ -21,6 +22,7 @@ import reactor.core.publisher.Mono;
 @RestController
 @RequestMapping("/api/v1/leaderboard")
 @RequiredArgsConstructor
+@RequireAccessToken
 @Tag(name = "Leaderboard Endpoints", description = "Leaderboard related endpoints")
 public class LeaderboardController {
 

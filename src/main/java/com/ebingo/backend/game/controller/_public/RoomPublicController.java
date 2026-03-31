@@ -1,5 +1,6 @@
 package com.ebingo.backend.game.controller._public;
 
+import com.ebingo.backend.common.annotation.RequireAccessToken;
 import com.ebingo.backend.common.dto.ApiResponse;
 import com.ebingo.backend.game.dto.RoomDto;
 import com.ebingo.backend.game.dto.RoomWithCardPoolDto;
@@ -19,6 +20,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/public/rooms")
 @Tag(name = "Room Secured Controller", description = "Room Secured Controller")
+@RequireAccessToken
 public class RoomPublicController {
     private final RoomService roomService;
 

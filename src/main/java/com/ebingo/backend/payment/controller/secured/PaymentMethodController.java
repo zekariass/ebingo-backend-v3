@@ -1,5 +1,6 @@
 package com.ebingo.backend.payment.controller.secured;
 
+import com.ebingo.backend.common.annotation.RequireAccessToken;
 import com.ebingo.backend.common.dto.ApiResponse;
 import com.ebingo.backend.payment.dto.PaymentMethodDto;
 import com.ebingo.backend.payment.service.PaymentMethodService;
@@ -23,6 +24,7 @@ import java.util.List;
 @RequestMapping("/api/v1/secured/payment-methods")
 @RequiredArgsConstructor
 @Tag(name = "Payment Method Secured Controller", description = "Payment Method Secured Controller")
+@RequireAccessToken
 public class PaymentMethodController {
     private final PaymentMethodService paymentMethodService;
 

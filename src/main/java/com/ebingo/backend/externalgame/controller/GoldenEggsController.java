@@ -1,5 +1,6 @@
 package com.ebingo.backend.externalgame.controller;
 
+import com.ebingo.backend.common.annotation.RequireAccessToken;
 import com.ebingo.backend.common.dto.ApiResponse;
 import com.ebingo.backend.externalgame.dto.GameModeDto;
 import com.ebingo.backend.externalgame.dto.LaunchRequest;
@@ -22,6 +23,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/external-games/golden-eggs")
 @RequiredArgsConstructor
+@RequireAccessToken
 @Slf4j
 public class GoldenEggsController {
 

@@ -1,5 +1,6 @@
 package com.ebingo.backend.payment.controller.secured;
 
+import com.ebingo.backend.common.annotation.RequireAccessToken;
 import com.ebingo.backend.common.dto.ApiResponse;
 import com.ebingo.backend.payment.dto.DepositTransferDto;
 import com.ebingo.backend.payment.dto.DepositTransferRequestDto;
@@ -22,6 +23,7 @@ import java.time.Instant;
 @RequestMapping("/api/v1/secured/deposit/transfers")
 @RequiredArgsConstructor
 @Tag(name = "Deposit Transfers Endpoint", description = "Deposit Transfers Endpoint")
+@RequireAccessToken
 public class DepositTransferController {
 
     private final DepositTransferService depositTransferService;
