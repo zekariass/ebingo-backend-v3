@@ -1,11 +1,15 @@
 package com.ebingo.backend.game.service.autoplay;
 
+import com.ebingo.backend.common.annotation.RequireAccessToken;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/admin/autoplay")
 @RequiredArgsConstructor
+@RequireAccessToken
+@Slf4j
 public class AutoPlayAdminController {
 
     private final GlobalAutoPlayManager manager;
