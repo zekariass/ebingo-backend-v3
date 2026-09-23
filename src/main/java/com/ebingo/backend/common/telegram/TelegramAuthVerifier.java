@@ -24,6 +24,12 @@ public class TelegramAuthVerifier {
 
 
     public Optional<Map<String, String>> verifyInitData(String initData) {
+        if (botToken == null || botToken.isBlank()) {
+            // Dev mode: no bot token configured -> skip signature verification, just parse
+            log.warn("telegram.bot.token not configured - skipping initData signature verification");
+            Map<String, String> params = parseInitData(initData);
+            return params.isEmpty() ? Optional.empty() : Optional.of(params);
+        }
         return verifyInitData(initData, botToken, 600); // Default 10 minutes
     }
 
