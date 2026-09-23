@@ -62,7 +62,7 @@ public class RoomController {
     @GetMapping("/{id}")
     @Operation(summary = "Get room by ID", description = "Get room by ID")
     public Mono<ResponseEntity<ApiResponse<RoomWithCardPoolDto>>> getRoomById(
-            @Parameter(required = true, description = "Room ID") @RequestParam Long id,
+            @Parameter(required = true, description = "Room ID") @PathVariable Long id,
 //            @RequestHeader(value = "x-init-data", required = true) String telegramInitData,
             ServerWebExchange exchange) {
 
