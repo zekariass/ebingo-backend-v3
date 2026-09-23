@@ -49,6 +49,11 @@ public class AccessTokenValidationFilter implements WebFilter {
                         return chain.filter(exchange);
                     }
 
+                    if (expectedAccessToken == null || expectedAccessToken.isBlank()) {
+                        // Dev mode: no access token configured -> skip validation
+                        return chain.filter(exchange);
+                    }
+
                     String accessToken = exchange.getRequest().getHeaders().getFirst("X-Access-Token");
 
                     if (expectedAccessToken.equals(accessToken)) {
