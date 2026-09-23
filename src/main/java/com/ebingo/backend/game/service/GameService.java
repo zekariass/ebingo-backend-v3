@@ -102,6 +102,9 @@ public class GameService {
     @Value("${game.draw.iteration:75}")
     private Integer drawIteration; // seconds
 
+    @Value("${game.mark-validation:false}")
+    private boolean markValidation;
+
     @Value("${game.countdown.initialInSeconds:30}")
     private Integer initialCountdownSeconds;
 
@@ -1457,15 +1460,47 @@ public class GameService {
 
 //        log.info("===================================>>>>>>>>>>>>: Marking number for room {} and user {} and cardId {}", roomId, userId, cardId);
 
-        return playerStateService.addMarkedNumber(gameId, userId, cardId, number)
-                .flatMap(updatedCard -> publisher.publishUserEvent(userId, Map.of(
-                        "type", "card.markNumberResponse",
-                        "payload", Map.of(
-                                "cardId", cardId,
-                                "marked", updatedCard
-                        )
-                )))
-                .then();
+        return validateMarkRequest(gameId, userId, cardId, number)
+                .flatMap(valid -> {
+                    if (!valid) {
+                        return publisher.publishUserEvent(userId, Map.of(
+                                "type", "error",
+                                "payload", Map.of(
+                                        "message", "Invalid mark request: card not owned or number not drawn",
+                                        "errorType", "INVALID_MARK",
+                                        "roomId", roomId
+                                )
+                        )).then();
+                    }
+                    return playerStateService.addMarkedNumber(gameId, userId, cardId, number)
+                            .flatMap(updatedCard -> publisher.publishUserEvent(userId, Map.of(
+                                    "type", "card.markNumberResponse",
+                                    "payload", Map.of(
+                                            "cardId", cardId,
+                                            "marked", updatedCard
+                                    )
+                            )))
+                            .then();
+                });
+    }
+
+    /**
+     * Flag-guarded validation (game.mark-validation): cardId must be in the
+     * player's selected cards and the number must have been drawn.
+     */
+    private Mono<Boolean> validateMarkRequest(Long gameId, String userId, String cardId, Integer number) {
+        if (!markValidation) {
+            return Mono.just(true);
+        }
+        return Mono.zip(
+                        setOps.isMember(RedisKeys.playerCardsIdsKey(gameId, userId), cardId),
+                        setOps.isMember(RedisKeys.gameDrawnNumbersKey(gameId), String.valueOf(number))
+                )
+                .map(t -> Boolean.TRUE.equals(t.getT1()) && Boolean.TRUE.equals(t.getT2()))
+                .onErrorResume(e -> {
+                    log.warn("Mark validation failed for game {} user {} card {}: {}", gameId, userId, cardId, e.getMessage());
+                    return Mono.just(false);
+                });
     }
 
     public Mono<Void> unmarkNumber(Long roomId, Long gameId, String userId, Map<String, Object> payload) {
@@ -1481,15 +1516,28 @@ public class GameService {
                     )
             )).then();
         }
-        return playerStateService.removeMarkedNumber(gameId, userId, cardId, number)
-                .flatMap(updatedCard -> publisher.publishUserEvent(userId, Map.of(
-                        "type", "card.unmarkNumberResponse",
-                        "payload", Map.of(
-                                "cardId", cardId,
-                                "marked", updatedCard
-                        )
-                )))
-                .then();
+        return validateMarkRequest(gameId, userId, cardId, number)
+                .flatMap(valid -> {
+                    if (!valid) {
+                        return publisher.publishUserEvent(userId, Map.of(
+                                "type", "error",
+                                "payload", Map.of(
+                                        "message", "Invalid unmark request: card not owned or number not drawn",
+                                        "errorType", "INVALID_MARK",
+                                        "roomId", roomId
+                                )
+                        )).then();
+                    }
+                    return playerStateService.removeMarkedNumber(gameId, userId, cardId, number)
+                            .flatMap(updatedCard -> publisher.publishUserEvent(userId, Map.of(
+                                    "type", "card.unmarkNumberResponse",
+                                    "payload", Map.of(
+                                            "cardId", cardId,
+                                            "marked", updatedCard
+                                    )
+                            )))
+                            .then();
+                });
     }
 
 
