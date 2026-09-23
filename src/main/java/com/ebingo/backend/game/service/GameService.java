@@ -24,6 +24,7 @@ import com.ebingo.backend.payment.enums.GameTxnType;
 import com.ebingo.backend.payment.service.GameTransactionService;
 import com.ebingo.backend.payment.service.PaymentService;
 import com.ebingo.backend.system.dto.SystemConfigDto;
+import com.ebingo.backend.system.exceptions.ResourceNotFoundException;
 import com.ebingo.backend.system.redis.RedisKeys;
 import com.ebingo.backend.system.service.SystemConfigService;
 import com.ebingo.backend.user.service.UserProfileService;
@@ -1494,10 +1495,11 @@ public class GameService {
 
     public Mono<Integer> getMinPlayersToStart(Long roomId) {
         return roomRepository.findById(roomId)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("Room not found with id: " + roomId)))
                 .map(Room::getMinPlayers)
-                .onErrorMap(e -> new RuntimeException("Error getting room by id: " + roomId, e));
-//                .doOnSubscribe(s -> log.info("Getting min players to start for room: {}", roomId));
-//                .doOnSuccess(id -> log.info("Got min players to start for room: {}", roomId));
+                .flatMap(minPlayers -> minPlayers != null
+                        ? Mono.just(minPlayers)
+                        : Mono.error(new IllegalStateException("Room " + roomId + " has no minPlayers configured")));
     }
 
     public Mono<Void> getCard(Long roomId, String cardId3, String userId) {
