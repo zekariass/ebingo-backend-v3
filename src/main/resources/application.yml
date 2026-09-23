@@ -77,7 +77,7 @@ bingo:
 
 telegram:
   bot:
-    token: ${TELEGRAM_BOT_TOKEN}
+    token: ${TELEGRAM_BOT_TOKEN:}
 
 app:
   cors:
