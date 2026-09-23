@@ -9,21 +9,21 @@ import reactor.core.publisher.Mono;
 public interface BingoClaimRepository extends ReactiveCrudRepository<BingoClaim, Long> {
 
     @Query(
-            "SELECT * FROM bingo_claim WHERE player_id = :id " +
-                    "ORDER BY created_at DESC " +
+            "SELECT * FROM bingo_claims WHERE player_id = :id " +
+                    "ORDER BY create_at DESC " +
                     "LIMIT :pageSize OFFSET :offset"
     )
     Flux<BingoClaim> findByPlayerIdOrderByCreatedAtDesc(Long id, int pageSize, long offset);
 
     @Query(
-            "SELECT * FROM bingo_claim WHERE player_id = :id " +
+            "SELECT * FROM bingo_claims WHERE player_id = :id " +
                     "ORDER BY id DESC " +
                     "LIMIT :pageSize OFFSET :offset"
     )
     Flux<BingoClaim> findByPlayerIdOrderByIdDesc(Long id, int pageSize, long offset);
 
     @Query(
-            "SELECT * FROM bingo_claim WHERE id = :id " +
+            "SELECT * FROM bingo_claims WHERE id = :id " +
                     "AND player_id = :playerId"
     )
     Mono<BingoClaim> findByIdAndPlayerId(Long id, Long playerId);
