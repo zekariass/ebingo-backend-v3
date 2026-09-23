@@ -19,7 +19,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class TelegramAuthVerifier {
 
-    @Value("${telegram.bot.token}")
+    @Value("${telegram.bot.token:}")
     private String botToken;
 
 
