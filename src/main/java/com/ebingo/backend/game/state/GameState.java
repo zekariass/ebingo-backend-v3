@@ -5,6 +5,7 @@ import lombok.Data;
 import lombok.ToString;
 
 import java.time.Instant;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -23,7 +24,8 @@ public class GameState {
     private final Set<String> joinedPlayers = ConcurrentHashMap.newKeySet();
 
     // Numbers that have been drawn in the game (order matters)
-    private final Set<Integer> drawnNumbers = new LinkedHashSet<>();
+    // synchronizedSet: preserves insertion order while making add/clear/contains thread-safe
+    private final Set<Integer> drawnNumbers = Collections.synchronizedSet(new LinkedHashSet<>());
 
     // Read from Player State
     private Set<String> userSelectedCardsIds = new LinkedHashSet<>();
@@ -35,8 +37,8 @@ public class GameState {
     private volatile GameStatus status = GameStatus.READY;
     private Instant statusUpdatedAt;
 
-    private Boolean stopNumberDrawing = false;
-    private Boolean claimRequested = false;
+    private volatile Boolean stopNumberDrawing = false;
+    private volatile Boolean claimRequested = false;
 
     //    private Instant countdownStartTime;
     private Instant countdownEndTime;
@@ -52,8 +54,10 @@ public class GameState {
     }
 
     public void setDrawnNumber(LinkedHashSet<Integer> nums) {
-        drawnNumbers.clear();
-        drawnNumbers.addAll(nums);
+        synchronized (drawnNumbers) {
+            drawnNumbers.clear();
+            drawnNumbers.addAll(nums);
+        }
     }
 
 }
