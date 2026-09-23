@@ -86,9 +86,10 @@ public class FakeWinService {
                         }
                     }
                     // Remove runtimes for rooms that no longer have fakeWin enabled
-                    runtimes.keySet().removeIf(roomId -> {
-                        if (!activeRoomIds.contains(roomId)) {
-                            log.info("FakeWinService removing runtime for room {} (fakeWin disabled or room removed)", roomId);
+                    runtimes.entrySet().removeIf(entry -> {
+                        if (!activeRoomIds.contains(entry.getKey())) {
+                            log.info("FakeWinService removing runtime for room {} (fakeWin disabled or room removed)", entry.getKey());
+                            entry.getValue().stop();
                             return true;
                         }
                         return false;
@@ -114,11 +115,12 @@ public class FakeWinService {
         private volatile RoomInternalDto room;
         private final Long roomId;
 
-        @SuppressWarnings("unused")
         private volatile Disposable roomSubscription;
 
         private volatile Long currentGameId;
         private volatile Integer targetDrawCount;
+        private volatile String fakeUserId;
+        private volatile String fakeCardId;
         private final Object gameLock = new Object();
 
         RoomFakeWinRuntime(RoomInternalDto initial) {
@@ -154,6 +156,15 @@ public class FakeWinService {
                     .subscribe();
 
             log.info("FakeWinService started listening to room {} channel", roomId);
+        }
+
+        void stop() {
+            Disposable sub = roomSubscription;
+            if (sub != null) {
+                sub.dispose();
+                roomSubscription = null;
+                log.info("FakeWinService stopped listening to room {} channel", roomId);
+            }
         }
 
         Mono<Void> handleRoomEvent(Map<String, Object> evt) {
@@ -249,9 +260,10 @@ public class FakeWinService {
                             return Mono.<Void>empty();
                         }
 
-                        // Add drawn number and check count
+                        // Add drawn number and check count (TTL guards against leaked keys)
                         return redisTemplate.opsForSet().add(drawnKey, drawnNumber.toString())
-                                .flatMap(added -> redisTemplate.opsForSet().size(drawnKey))
+                                .flatMap(added -> redisTemplate.expire(drawnKey, Duration.ofHours(2))
+                                        .then(redisTemplate.opsForSet().size(drawnKey)))
                                 .flatMap(drawCount -> {
                                     log.debug("Room {} game {}: Draw #{} - number {}", roomId, gameId, drawCount, drawnNumber);
 
@@ -317,6 +329,9 @@ public class FakeWinService {
                                 return redisTemplate.delete(triggeredKey).then();
                             }
 
+                            this.fakeUserId = fakeUserId;
+                            this.fakeCardId = generatedCard.getCardId();
+
                             Map<String, Object> payload = buildBingoPayload(gameId, generatedCard, fakeUserId, room.getPattern());
 
                             log.info("Room {} game {}: FakeWin claiming bingo with user {} pattern {} card {} marked {}",
@@ -334,7 +349,8 @@ public class FakeWinService {
                                         if (markedArray.length == 0) {
                                             return Mono.just(0L);
                                         }
-                                        return redisTemplate.opsForSet().add(markedKey, markedArray);
+                                        return redisTemplate.opsForSet().add(markedKey, markedArray)
+                                                .then(redisTemplate.expire(markedKey, Duration.ofHours(2)));
                                     }))
                                     .then(Mono.defer(() ->
                                             gameService.claimBingo(roomId, fakeUserId, payload, room.getAgentId(), ParticipantType.BOT)
@@ -520,10 +536,26 @@ public class FakeWinService {
 
             log.info("Room {} game {}: Clearing FakeWin Redis state", roomId, gameId);
 
-            return Mono.when(
-                            redisTemplate.delete(drawnKey),
-                            redisTemplate.delete(triggeredKey)
-                    )
+            String fUser = this.fakeUserId;
+            String fCard = this.fakeCardId;
+            this.fakeUserId = null;
+            this.fakeCardId = null;
+
+            Mono<Void> cleanup = Mono.when(
+                    redisTemplate.delete(drawnKey),
+                    redisTemplate.delete(triggeredKey)
+            );
+
+            // Remove orphaned fake-player state that PlayerCleanupService cannot reach
+            // (the fake card is never in playerCardsIdsKey / allPlayersSelectedCardsIdsKey)
+            if (fUser != null && fCard != null) {
+                cleanup = cleanup.then(Mono.when(
+                        redisTemplate.delete(RedisKeys.playerMarkedNumbersKey(gameId, fUser, fCard)),
+                        redisTemplate.opsForSet().remove(RedisKeys.gamePlayersKey(gameId), fUser)
+                ));
+            }
+
+            return cleanup
                     .doOnSuccess(v -> log.info("Room {} game {}: FakeWin Redis state cleared successfully", roomId, gameId))
                     .doOnError(e -> log.error("Room {} game {}: Failed to clear FakeWin Redis state: {}", roomId, gameId, e.getMessage()))
                     .then();
