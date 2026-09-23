@@ -56,6 +56,7 @@ public class AutoPlayService {
     private static final long JOIN_DELAY_MAX_MS = 600;
     private static final Duration SPAWN_LOCK_TTL = Duration.ofSeconds(5);
     private static final Duration BINGO_CLAIM_DELAY = Duration.ofMillis(2000);
+    private static final Duration ROOM_REFRESH_INTERVAL = Duration.ofMinutes(5);
 
     // Concurrency controls (TUNED DOWN for 2 cores)
     private static final int JOIN_CONCURRENCY_SOFT_CAP = 6;     // was 20
@@ -135,6 +136,39 @@ public class AutoPlayService {
                 );
 
         watchGlobalToggle();
+
+        // Periodic refresh: pick up new botAllowed rooms and drop removed/disabled ones
+        Flux.interval(ROOM_REFRESH_INTERVAL)
+                .flatMap(tick -> refreshRoomsFromDb()
+                        .onErrorResume(e -> {
+                            log.error("AutoPlayService periodic room refresh failed: {}", e.getMessage());
+                            return Mono.empty();
+                        }))
+                .subscribe();
+    }
+
+    private Mono<Void> refreshRoomsFromDb() {
+        return roomService.getAllRoomsWIthCardPoolForAutoService()
+                .filter(RoomInternalDto::getBotAllowed)
+                .collectList()
+                .doOnNext(rooms -> {
+                    Set<Long> activeRoomIds = new HashSet<>();
+                    for (RoomInternalDto room : rooms) {
+                        ensureRoomRuntime(room);
+                        activeRoomIds.add(room.getId());
+                    }
+                    // Remove runtimes for rooms that left the active set
+                    runtimes.entrySet().removeIf(entry -> {
+                        if (!activeRoomIds.contains(entry.getKey())) {
+                            log.info("AutoPlayService removing runtime for room {} (botAllowed disabled or room removed)", entry.getKey());
+                            entry.getValue().stop();
+                            return true;
+                        }
+                        return false;
+                    });
+                    log.info("AutoPlayService refreshed {} rooms from DB, {} active runtimes", rooms.size(), runtimes.size());
+                })
+                .then();
     }
 
     private void ensureRoomRuntime(RoomInternalDto room) {
@@ -184,7 +218,6 @@ public class AutoPlayService {
 
         private volatile boolean enabled = true;
 
-        @SuppressWarnings("unused")
         private volatile Disposable roomSubscription;
 
         // current game state
@@ -237,6 +270,18 @@ public class AutoPlayService {
 
         void disable() {
             enabled = false;
+        }
+
+        void stop() {
+            enabled = false;
+            Disposable sub = roomSubscription;
+            if (sub != null) {
+                sub.dispose();
+                roomSubscription = null;
+                log.info("AutoPlayService stopped listening to room {} channel", roomId);
+            }
+            botSessions.clear();
+            numberIndex.clear();
         }
 
         void enable() {
