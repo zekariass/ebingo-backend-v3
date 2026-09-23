@@ -96,10 +96,6 @@ public final class RedisKeys {
         return "game:" + gameId + ":countdownLock";
     }
 
-    public static String selectedCardsKey(long gameId) {
-        return "game:" + gameId + ":selectedCardsIds";
-    }
-
     public static String allPlayersSelectedCardsIdsKey(Long gameId) {
         return "game:" + gameId + ":allPlayersSelectedCardsIds";
     }
