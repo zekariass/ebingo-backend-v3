@@ -595,7 +595,7 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
                                                     order.setApprovedBy(adminUserId);
                                                     order.setUpdatedAt(Instant.now());
 
-                                                    return walletService.saveWallet(wallet, dto.getAgentId())
+                                                    return walletService.saveWallet(wallet, order.getAgentId())
                                                             .then(orderRepo.save(order))
                                                             .map(PaymentOrderMapper::toDto);
                                                 }
@@ -617,14 +617,14 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
                                                 order.setReason(dto.getReason());
 
 
-                                                return walletService.saveWallet(wallet, dto.getAgentId())
+                                                return walletService.saveWallet(wallet, order.getAgentId())
                                                         .then(orderRepo.save(order))
                                                         .map(PaymentOrderMapper::toDto)
                                                         .flatMap(savedDto ->
-                                                                dailyAgentAccountingService.updateForWithdrawal(dto.getAgentId(), amount)
-                                                                        .then(totalAgentAccountingService.updateForWithdrawal(dto.getAgentId(), amount))
-                                                                        .then(dailyLeaderboardService.updateForWithdrawal(dto.getAgentId(), profile.getId(), amount, profile.getIsBot()))
-                                                                        .then(totalLeaderboardService.updateForWithdrawal(dto.getAgentId(), profile.getId(), amount, profile.getIsBot()))
+                                                                dailyAgentAccountingService.updateForWithdrawal(order.getAgentId(), amount)
+                                                                        .then(totalAgentAccountingService.updateForWithdrawal(order.getAgentId(), amount))
+                                                                        .then(dailyLeaderboardService.updateForWithdrawal(order.getAgentId(), profile.getId(), amount, profile.getIsBot()))
+                                                                        .then(totalLeaderboardService.updateForWithdrawal(order.getAgentId(), profile.getId(), amount, profile.getIsBot()))
                                                                         .thenReturn(savedDto)
                                                         );
 

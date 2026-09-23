@@ -76,9 +76,6 @@ public class TotalAgentAccounting {
     @Column("total_settled_amount")
     private BigDecimal totalSettledAmount;
 
-    @Column("next_settlement_time")
-    private LocalDateTime nextSettlementTime;
-
     @CreatedDate
     @Column("created_at")
     private LocalDateTime createdAt;

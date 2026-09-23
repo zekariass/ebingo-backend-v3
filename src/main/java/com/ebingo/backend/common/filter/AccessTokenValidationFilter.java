@@ -42,8 +42,10 @@ public class AccessTokenValidationFilter implements WebFilter {
         return handlerMapping.getHandler(exchange)
                 .filter(handler -> handler instanceof HandlerMethod)
                 .cast(HandlerMethod.class)
-                .flatMap(handlerMethod -> {
-                    if (!requiresAccessToken(handlerMethod)) {
+                .map(this::requiresAccessToken)
+                .defaultIfEmpty(false)
+                .flatMap(required -> {
+                    if (!required) {
                         return chain.filter(exchange);
                     }
 
@@ -55,8 +57,7 @@ public class AccessTokenValidationFilter implements WebFilter {
 
                     log.warn("Access token validation failed for path: {}", exchange.getRequest().getPath().value());
                     return writeUnauthorizedResponse(exchange);
-                })
-                .switchIfEmpty(chain.filter(exchange));
+                });
     }
 
     private boolean requiresAccessToken(HandlerMethod handlerMethod) {

@@ -12,6 +12,25 @@ import java.time.LocalDate;
 public interface DailyAgentAccountingRepository extends ReactiveCrudRepository<DailyAgentAccounting, Long> {
     Mono<DailyAgentAccounting> findByAgentIdAndAccountingDate(Long agentId, LocalDate today);
 
+    @Query("SELECT * FROM daily_agent_accounting WHERE agent_id = :agentId AND accounting_date = CURRENT_DATE")
+    Mono<DailyAgentAccounting> findTodayByAgentId(Long agentId);
+
+    @Query("SELECT CURRENT_DATE")
+    Mono<LocalDate> getCurrentDate();
+
+    /**
+     * Atomically mark a past, unsettled record as settled.
+     * Returns empty if the record doesn't exist, is already settled, or is today's record.
+     */
+    @Query("""
+              UPDATE daily_agent_accounting
+              SET settled_at = NOW(), updated_at = NOW()
+              WHERE id = :id
+                AND settled_at IS NULL
+                AND accounting_date < CURRENT_DATE
+              RETURNING *
+            """)
+    Mono<DailyAgentAccounting> applySettlement(Long id);
 
     @Query("""
               INSERT INTO daily_agent_accounting(
@@ -19,14 +38,14 @@ public interface DailyAgentAccountingRepository extends ReactiveCrudRepository<D
                 daily_deposit_amount,
                 created_at, updated_at
               )
-              VALUES (:agentId, :date, :amount, NOW(), NOW())
+              VALUES (:agentId, CURRENT_DATE, :amount, NOW(), NOW())
               ON CONFLICT (accounting_date, agent_id)
               DO UPDATE SET
                 daily_deposit_amount = daily_agent_accounting.daily_deposit_amount + EXCLUDED.daily_deposit_amount,
                 updated_at = NOW()
               RETURNING *
             """)
-    Mono<DailyAgentAccounting> upsertDeposit(Long agentId, LocalDate date, BigDecimal amount);
+    Mono<DailyAgentAccounting> upsertDeposit(Long agentId, BigDecimal amount);
 
     @Query("""
               INSERT INTO daily_agent_accounting(
@@ -34,14 +53,14 @@ public interface DailyAgentAccountingRepository extends ReactiveCrudRepository<D
                 daily_withdrawal_amount,
                 created_at, updated_at
               )
-              VALUES (:agentId, :date, :amount, NOW(), NOW())
+              VALUES (:agentId, CURRENT_DATE, :amount, NOW(), NOW())
               ON CONFLICT (accounting_date, agent_id)
               DO UPDATE SET
                 daily_withdrawal_amount = daily_agent_accounting.daily_withdrawal_amount + EXCLUDED.daily_withdrawal_amount,
                 updated_at = NOW()
               RETURNING *
             """)
-    Mono<DailyAgentAccounting> upsertWithdrawal(Long agentId, LocalDate date, BigDecimal amount);
+    Mono<DailyAgentAccounting> upsertWithdrawal(Long agentId, BigDecimal amount);
 
     @Query("""
               INSERT INTO daily_agent_accounting(
@@ -50,7 +69,7 @@ public interface DailyAgentAccountingRepository extends ReactiveCrudRepository<D
                 daily_bot_win_amount, daily_bot_loss_amount,
                 created_at, updated_at
               )
-              VALUES (:agentId, :date, :bet, :prize, :commission, :botWin, :botLoss, NOW(), NOW())
+              VALUES (:agentId, CURRENT_DATE, :bet, :prize, :commission, :botWin, :botLoss, NOW(), NOW())
               ON CONFLICT (accounting_date, agent_id)
               DO UPDATE SET
                 daily_bet_amount = daily_agent_accounting.daily_bet_amount + EXCLUDED.daily_bet_amount,
@@ -62,7 +81,7 @@ public interface DailyAgentAccountingRepository extends ReactiveCrudRepository<D
               RETURNING *
             """)
     Mono<DailyAgentAccounting> upsertPrizePayout(
-            Long agentId, LocalDate date,
+            Long agentId,
             BigDecimal bet, BigDecimal prize, BigDecimal commission,
             BigDecimal botWin, BigDecimal botLoss
     );
@@ -73,14 +92,14 @@ public interface DailyAgentAccountingRepository extends ReactiveCrudRepository<D
                 daily_promotional_bonus_amount,
                 created_at, updated_at
               )
-              VALUES (:agentId, :date, :amount, NOW(), NOW())
+              VALUES (:agentId, CURRENT_DATE, :amount, NOW(), NOW())
               ON CONFLICT (accounting_date, agent_id)
               DO UPDATE SET
                 daily_promotional_bonus_amount = daily_agent_accounting.daily_promotional_bonus_amount + EXCLUDED.daily_promotional_bonus_amount,
                 updated_at = NOW()
               RETURNING *
             """)
-    Mono<DailyAgentAccounting> upsertPromoBonus(Long agentId, LocalDate date, BigDecimal amount);
+    Mono<DailyAgentAccounting> upsertPromoBonus(Long agentId, BigDecimal amount);
 
     @Query("""
               INSERT INTO daily_agent_accounting(
@@ -88,14 +107,14 @@ public interface DailyAgentAccountingRepository extends ReactiveCrudRepository<D
                 daily_welcome_bonus_amount,
                 created_at, updated_at
               )
-              VALUES (:agentId, :date, :amount, NOW(), NOW())
+              VALUES (:agentId, CURRENT_DATE, :amount, NOW(), NOW())
               ON CONFLICT (accounting_date, agent_id)
               DO UPDATE SET
                 daily_welcome_bonus_amount = daily_agent_accounting.daily_welcome_bonus_amount + EXCLUDED.daily_welcome_bonus_amount,
                 updated_at = NOW()
               RETURNING *
             """)
-    Mono<DailyAgentAccounting> upsertWelcomeBonus(Long agentId, LocalDate date, BigDecimal amount);
+    Mono<DailyAgentAccounting> upsertWelcomeBonus(Long agentId, BigDecimal amount);
 
     @Query("""
               INSERT INTO daily_agent_accounting(
@@ -103,14 +122,14 @@ public interface DailyAgentAccountingRepository extends ReactiveCrudRepository<D
                 daily_referral_bonus_amount,
                 created_at, updated_at
               )
-              VALUES (:agentId, :date, :amount, NOW(), NOW())
+              VALUES (:agentId, CURRENT_DATE, :amount, NOW(), NOW())
               ON CONFLICT (accounting_date, agent_id)
               DO UPDATE SET
                 daily_referral_bonus_amount = daily_agent_accounting.daily_referral_bonus_amount + EXCLUDED.daily_referral_bonus_amount,
                 updated_at = NOW()
               RETURNING *
             """)
-    Mono<DailyAgentAccounting> upsertReferralBonus(Long agentId, LocalDate date, BigDecimal amount);
+    Mono<DailyAgentAccounting> upsertReferralBonus(Long agentId, BigDecimal amount);
 
 
     @Query("""
@@ -119,14 +138,14 @@ public interface DailyAgentAccountingRepository extends ReactiveCrudRepository<D
                 daily_deposit_bonus_amount,
                 created_at, updated_at
               )
-              VALUES (:agentId, :today, :add, NOW(), NOW())
+              VALUES (:agentId, CURRENT_DATE, :add, NOW(), NOW())
               ON CONFLICT (accounting_date, agent_id)
               DO UPDATE SET
                 daily_deposit_bonus_amount = daily_agent_accounting.daily_deposit_bonus_amount + EXCLUDED.daily_deposit_bonus_amount,
                 updated_at = NOW()
               RETURNING *
             """)
-    Mono<DailyAgentAccounting> upsertDepositBonus(Long agentId, LocalDate today, BigDecimal add);
+    Mono<DailyAgentAccounting> upsertDepositBonus(Long agentId, BigDecimal add);
 
     // Pagination queries
     @Query("SELECT * FROM daily_agent_accounting ORDER BY id DESC LIMIT :limit OFFSET :offset")
@@ -164,12 +183,13 @@ public interface DailyAgentAccountingRepository extends ReactiveCrudRepository<D
             "AND accounting_date >= :startDate AND accounting_date <= :endDate")
     Mono<Long> countByAgentIdAndDateRange(Long agentId, LocalDate startDate, LocalDate endDate);
 
-    // Today's records for all agents (admin)
-    @Query("SELECT * FROM daily_agent_accounting WHERE accounting_date = :today " +
+    // Today's records for all agents (admin) — DB-side CURRENT_DATE keeps
+    // accounting_date consistent with the upserts regardless of JVM timezone
+    @Query("SELECT * FROM daily_agent_accounting WHERE accounting_date = CURRENT_DATE " +
             "ORDER BY id DESC LIMIT :limit OFFSET :offset")
-    Flux<DailyAgentAccounting> findByAccountingDatePaged(LocalDate today, int limit, long offset);
+    Flux<DailyAgentAccounting> findTodayPaged(int limit, long offset);
 
-    @Query("SELECT COUNT(*) FROM daily_agent_accounting WHERE accounting_date = :today")
-    Mono<Long> countByAccountingDate(LocalDate today);
+    @Query("SELECT COUNT(*) FROM daily_agent_accounting WHERE accounting_date = CURRENT_DATE")
+    Mono<Long> countToday();
 }
 

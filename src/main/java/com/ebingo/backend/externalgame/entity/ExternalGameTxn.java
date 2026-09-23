@@ -76,6 +76,9 @@ public class ExternalGameTxn implements Persistable<UUID> {
     @Column("wallet_entry_id")
     private Long walletEntryId;
 
+    @Column("payment_sources")
+    private String paymentSources; // bucket breakdown used for the debit, e.g. WELCOME_BONUS/20.00*DEPOSIT_BONUS/5.00
+
     @Column("response_snapshot")
     private String responseSnapshot;
 

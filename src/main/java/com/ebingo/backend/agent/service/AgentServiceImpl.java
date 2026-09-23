@@ -1,7 +1,9 @@
 package com.ebingo.backend.agent.service;
 
+import com.ebingo.backend.agent.dto.agent.AgentCreateDto;
 import com.ebingo.backend.agent.dto.agent.AgentDto;
 import com.ebingo.backend.agent.dto.agent.AgentUpdateDto;
+import com.ebingo.backend.agent.entity.Agent;
 import com.ebingo.backend.agent.mappers.AgentMapper;
 import com.ebingo.backend.agent.repository.AgentRepository;
 import com.ebingo.backend.common.dto.PageResponse;
@@ -9,6 +11,7 @@ import com.ebingo.backend.system.exceptions.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -20,6 +23,8 @@ import java.time.LocalDateTime;
 public class AgentServiceImpl implements AgentService {
 
     private final AgentRepository repository;
+    private final AgentConfigService agentConfigService;
+    private final TransactionalOperator transactionalOperator;
 
     @Override
     public Mono<PageResponse<AgentDto>> getAllAgents(int page, int size, String sortBy) {
@@ -41,6 +46,34 @@ public class AgentServiceImpl implements AgentService {
                 .doOnSubscribe(s -> log.info("Fetching all agents, page: {}, size: {}, sortBy: {}", page, size, sortBy))
                 .doOnSuccess(response -> log.info("Fetched {} agents", response.getContent().size()))
                 .doOnError(e -> log.error("Failed to fetch agents", e));
+    }
+
+    @Override
+    public Mono<AgentDto> createAgent(AgentCreateDto dto) {
+        LocalDateTime now = LocalDateTime.now();
+        Agent agent = new Agent();
+        agent.setName(dto.getName());
+        agent.setCode(dto.getCode());
+        agent.setPhoneNumber(dto.getPhoneNumber());
+        agent.setEmail(dto.getEmail());
+        agent.setContactName(dto.getContactName());
+        agent.setIsMaster(dto.getIsMaster() != null ? dto.getIsMaster() : false);
+        agent.setIsActive(dto.getIsActive() != null ? dto.getIsActive() : false);
+        agent.setCommissionRate(dto.getCommissionRate());
+        agent.setBotToken(dto.getBotToken());
+        agent.setBotUsername(dto.getBotUsername());
+        agent.setContactAddress(dto.getContactAddress());
+        agent.setCreatedAt(now);
+        agent.setUpdatedAt(now);
+
+        return repository.save(agent)
+                .flatMap(saved -> agentConfigService.createEmptyConfig(saved.getId())
+                        .thenReturn(saved))
+                .map(AgentMapper::toDto)
+                .as(transactionalOperator::transactional)
+                .doOnSubscribe(s -> log.info("Creating agent: {}", dto.getName()))
+                .doOnSuccess(saved -> log.info("Created agent with ID: {}", saved.getId()))
+                .doOnError(e -> log.error("Failed to create agent: {}", dto.getName(), e));
     }
 
     @Override

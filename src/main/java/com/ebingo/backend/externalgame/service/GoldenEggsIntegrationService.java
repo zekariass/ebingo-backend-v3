@@ -25,7 +25,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.reactive.TransactionalOperator;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 import reactor.util.retry.Retry;
@@ -59,7 +58,6 @@ public class GoldenEggsIntegrationService {
     private final UserProfileRepository userProfileRepository;
     private final AgentRepository agentRepository;
     private final TelegramAuthVerifier telegramAuthVerifier;
-    private final TransactionalOperator transactionalOperator;
     private final ObjectMapper objectMapper;
     private final GoldenEggsAccountingService accountingService;
     private final SecureRandom secureRandom = new SecureRandom();
@@ -185,9 +183,14 @@ public class GoldenEggsIntegrationService {
                     UserProfile newUser = new UserProfile();
                     newUser.setTelegramId(telegramUserId);
                     newUser.setAgentId(agentId);
-                    newUser.setFirstName(firstName);
+                    // phone_number is NOT NULL in schema - use a synthetic placeholder until the user links a real one
+                    newUser.setPhoneNumber("tg_" + telegramUserId);
+                    // first_name is NOT NULL in schema - fall back to a placeholder
+                    newUser.setFirstName(firstName != null && !firstName.isBlank() ? firstName : "Player");
                     newUser.setLastName(lastName);
                     newUser.setNickname(null); // Can be set later
+                    newUser.setStatus(com.ebingo.backend.user.enums.UserStatus.ACTIVE);
+                    newUser.setRole(com.ebingo.backend.user.enums.UserRole.PLAYER);
                     newUser.setIsBot(false);
                     newUser.setIsDeleted(false);
                     newUser.setCreatedAt(java.time.LocalDateTime.now());
@@ -202,7 +205,11 @@ public class GoldenEggsIntegrationService {
                                     log.info("Created new user: id={}, telegramId={}", user.getId(), telegramUserId)
                             );
 
-                }));
+                }))
+                // Concurrent launch for the same new user: re-run the find so we pick up the row the other request inserted
+                .retryWhen(Retry.max(2)
+                        .filter(throwable -> throwable instanceof DataIntegrityViolationException)
+                        .doBeforeRetry(signal -> log.warn("User insert collision for telegramId={}, retrying lookup", telegramUserId)));
     }
 
     /**
@@ -257,20 +264,15 @@ public class GoldenEggsIntegrationService {
                             .append("&adaptive=").append(request.getAdaptive() != null ? request.getAdaptive() : "true")
                             .append("&isDemoPlay=").append(request.getIsDemoPlay() != null ? request.getIsDemoPlay() : "false")
                             .append("&token=").append(validationToken)
-                            .append("&userCountryCode=ET")
+                            .append("&userCountryCode=").append(request.getUserCountryCode() != null && !request.getUserCountryCode().isEmpty()
+                                    ? request.getUserCountryCode() : "ET")
                             .append("&brandName=").append(request.getBrandName() != null ? request.getBrandName() : "")
                             .append("&lobbyUrl=").append(encodedLobbyUrl);
-
-                    // Add optional userCountryCode if provided
-//                    if (request.getUserCountryCode() != null && !request.getUserCountryCode().isEmpty()) {
-//                        urlBuilder.append("&userCountryCode=").append(request.getUserCountryCode());
-//                    }
 
                     String gameUrl = urlBuilder.toString();
 
                     log.info("Generated game URL for userId={}, authToken={}, validationToken={}",
                             userId, truncateToken(authToken), truncateToken(validationToken));
-                    System.out.println(">>>>>>>>>>>>>>>>>>>>  Generated game URL: " + gameUrl);
 
                     return LaunchResponse.builder()
                             .url(gameUrl)
@@ -306,8 +308,6 @@ public class GoldenEggsIntegrationService {
         try {
             // Create key as "aggregatorId:subId"
             String key = aggregatorId + ":" + subId;
-
-            System.out.println(">>>>>>>>>>>>>>>>>>>>  Generating subId validation token with key: " + key);
 
             Mac hmac = Mac.getInstance("HmacSHA256");
             SecretKeySpec secretKey = new SecretKeySpec(
@@ -405,7 +405,15 @@ public class GoldenEggsIntegrationService {
                                                     .token(sessionToken)
                                                     .build();
                                         });
-                            });
+                            })
+                            // User profile or wallet missing - not a token problem
+                            .switchIfEmpty(Mono.defer(() -> {
+                                log.warn("Init failed: user or wallet not found for userId={}", authToken.getUserId());
+                                return Mono.just((Object) ErrorResponse.builder()
+                                        .code("ACCOUNT_INVALID")
+                                        .message("User wallet not found")
+                                        .build());
+                            }));
                 })
                 .switchIfEmpty(Mono.just(ErrorResponse.builder()
                         .code("INVALID_TOKEN")
@@ -421,79 +429,131 @@ public class GoldenEggsIntegrationService {
     }
 
     /**
-     * Handle bet webhook
+     * Handle bet webhook (idempotent)
      */
     public Mono<Object> handleBet(BetRequest request) {
         log.info("Handling bet request: txnId={}, amount={}",
                 request.getData().getTransactionId(), request.getData().getAmount());
 
-        return sessionRepository.findActiveSession(request.getToken(), Instant.now())
-                .flatMap(session -> {
-                    BigDecimal amount = new BigDecimal(request.getData().getAmount());
-
-                    // Create transaction record
-                    ExternalGameTxn txn = ExternalGameTxn.builder()
-                            .id(UUID.randomUUID())
-                            .action("BET")
-                            .providerTransactionId(request.getData().getTransactionId())
-                            .gameId(request.getData().getGameId())
-                            .userId(session.getUserId())
-                            .agentId(session.getAgentId())
-                            .operatorId(session.getOperatorId())
-                            .currency(request.getData().getCurrency())
-                            .gameMode(request.getGameMode())
-                            .amount(amount)
-                            .isFinished(false)
-                            .status("PENDING")
-                            .createdAt(Instant.now())
-                            .updatedAt(Instant.now())
-                            .build();
-
-                    return txnRepository.save(txn)
-                            .flatMap(savedTxn -> {
-                                // Mark as not new to allow UPDATE on subsequent saves
-                                savedTxn.setNew(false);
-                                return walletService.debitExternalGame(
-                                                session.getUserId(),
-                                                amount,
-                                                request.getData().getCurrency(),
-                                                request.getData().getTransactionId(),
-                                                request.getData().getGameId()
-                                        )
-                                        .flatMap(walletResult -> {
-                                            if (walletResult.isSuccess()) {
-                                                savedTxn.setStatus("SUCCESS");
-                                                // Record bet in accounting (async)
-                                                recordBetAsync(amount, request.getData().getCurrency(), session.getAgentId());
-                                                return txnRepository.save(savedTxn)
-                                                        .map(updated -> BetResponse.builder()
-                                                                .code("OK")
-                                                                .balance(walletResult.getBalance())
-                                                                .hideFromStat(false)
-                                                                .build());
-                                            } else {
-                                                savedTxn.setStatus("FAILED");
-                                                savedTxn.setErrorCode(walletResult.getErrorCode());
-                                                savedTxn.setErrorMessage(walletResult.getErrorMessage());
-                                                return txnRepository.save(savedTxn)
-                                                        .map(updated -> ErrorResponse.builder()
-                                                                .code(walletResult.getErrorCode())
-                                                                .message(walletResult.getErrorMessage())
-                                                                .build());
-                                            }
-                                        });
-                            });
+        // Check for ANY existing transaction first (idempotency - prevents double debit on retries)
+        return txnRepository.findByActionAndProviderTransactionId("BET", request.getData().getTransactionId())
+                .flatMap(this::buildExistingBetResponse)
+                .switchIfEmpty(Mono.defer(() ->
+                        sessionRepository.findActiveSession(request.getToken(), Instant.now())
+                                .flatMap(session -> processBet(request, session))
+                                .switchIfEmpty(Mono.just((Object) ErrorResponse.builder()
+                                        .code("INVALID_TOKEN")
+                                        .message("Invalid or expired session")
+                                        .build()))
+                ))
+                .onErrorResume(org.springframework.dao.DuplicateKeyException.class, e -> {
+                    // Concurrent insert lost the race - replay the stored transaction's response
+                    log.warn("Duplicate bet transaction detected: {}", request.getData().getTransactionId());
+                    return txnRepository.findByActionAndProviderTransactionId("BET", request.getData().getTransactionId())
+                            .flatMap(this::buildExistingBetResponse)
+                            .switchIfEmpty(Mono.just((Object) ErrorResponse.builder()
+                                    .code("TEMPORARY_ERROR")
+                                    .message("Transaction is being processed")
+                                    .build()));
                 })
-                .switchIfEmpty(Mono.just(ErrorResponse.builder()
-                        .code("INVALID_TOKEN")
-                        .message("Invalid or expired session")
-                        .build()))
                 .onErrorResume(e -> {
                     log.error("Error handling bet", e);
                     return Mono.just(ErrorResponse.builder()
                             .code("UNKNOWN_ERROR")
                             .message("Internal error processing bet")
                             .build());
+                });
+    }
+
+    /**
+     * Replay the response for an already-recorded BET transaction (idempotency)
+     */
+    private Mono<Object> buildExistingBetResponse(ExternalGameTxn existingTxn) {
+        log.info("Found existing bet transaction with status: {}", existingTxn.getStatus());
+        if ("SUCCESS".equals(existingTxn.getStatus())) {
+            // Return success with CURRENT balance (not cached)
+            return walletRepository.findByUserProfileId(existingTxn.getUserId())
+                    .map(wallet -> (Object) BetResponse.builder()
+                            .code("OK")
+                            .balance(walletService.formatBalance(wallet.getTotalAvailableBalance(), existingTxn.getCurrency()))
+                            .hideFromStat(false)
+                            .build())
+                    .switchIfEmpty(Mono.just((Object) ErrorResponse.builder()
+                            .code("ACCOUNT_INVALID")
+                            .message("Wallet not found")
+                            .build()));
+        } else if ("PENDING".equals(existingTxn.getStatus())) {
+            return Mono.just((Object) ErrorResponse.builder()
+                    .code("TEMPORARY_ERROR")
+                    .message("Transaction is being processed")
+                    .build());
+        } else {
+            return Mono.just((Object) ErrorResponse.builder()
+                    .code(existingTxn.getErrorCode() != null ? existingTxn.getErrorCode() : "UNKNOWN_ERROR")
+                    .message(existingTxn.getErrorMessage() != null ? existingTxn.getErrorMessage() : "Transaction failed")
+                    .build());
+        }
+    }
+
+    /**
+     * Process a new bet: record txn, debit wallet, update txn status
+     */
+    private Mono<Object> processBet(BetRequest request, ExternalGameSession session) {
+        BigDecimal amount = new BigDecimal(request.getData().getAmount());
+
+        // Create transaction record
+        ExternalGameTxn txn = ExternalGameTxn.builder()
+                .id(UUID.randomUUID())
+                .action("BET")
+                .providerTransactionId(request.getData().getTransactionId())
+                .gameId(request.getData().getGameId())
+                .userId(session.getUserId())
+                .agentId(session.getAgentId())
+                .operatorId(session.getOperatorId())
+                .currency(request.getData().getCurrency())
+                .gameMode(request.getGameMode())
+                .amount(amount)
+                .isFinished(false)
+                .status("PENDING")
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+
+        return txnRepository.save(txn)
+                .flatMap(savedTxn -> {
+                    // Mark as not new to allow UPDATE on subsequent saves
+                    savedTxn.setNew(false);
+                    return walletService.debitExternalGame(
+                                    session.getUserId(),
+                                    amount,
+                                    request.getData().getCurrency(),
+                                    request.getData().getTransactionId(),
+                                    request.getData().getGameId()
+                            )
+                            .flatMap(walletResult -> {
+                                if (walletResult.isSuccess()) {
+                                    savedTxn.setStatus("SUCCESS");
+                                    // Persist the debit bucket breakdown so a later rollback restores the same buckets
+                                    savedTxn.setPaymentSources(walletResult.getPaymentSources());
+                                    // Record bet in accounting (async)
+                                    recordBetAsync(amount, request.getData().getCurrency(), session.getAgentId());
+                                    return txnRepository.save(savedTxn)
+                                            .map(updated -> (Object) BetResponse.builder()
+                                                    .code("OK")
+                                                    .balance(walletResult.getBalance())
+                                                    .hideFromStat(false)
+                                                    .build());
+                                } else {
+                                    savedTxn.setStatus("FAILED");
+                                    savedTxn.setErrorCode(walletResult.getErrorCode());
+                                    savedTxn.setErrorMessage(walletResult.getErrorMessage());
+                                    return txnRepository.save(savedTxn)
+                                            .map(updated -> (Object) ErrorResponse.builder()
+                                                    .code(walletResult.getErrorCode())
+                                                    .message(walletResult.getErrorMessage())
+                                                    .build());
+                                }
+                            });
                 });
     }
 
@@ -794,12 +854,34 @@ public class GoldenEggsIntegrationService {
                                     }
                                 }
                             })
-                            .switchIfEmpty(
+                            .switchIfEmpty(Mono.defer(() ->
+                                    // Reject rollback if the bet was already settled by a withdraw (prevents double payout)
+                                    txnRepository.findSuccessfulWithdrawByDebitId(request.getData().getDebitId())
+                                            .flatMap(settledTxn -> {
+                                                log.warn("Rollback rejected: bet {} already settled by withdraw {}",
+                                                        request.getData().getDebitId(), settledTxn.getProviderTransactionId());
+                                                try {
+                                                    return Mono.just(objectMapper.writeValueAsString(
+                                                            ErrorResponse.builder()
+                                                                    .code("CHECKS_FAIL")
+                                                                    .message("Bet already settled")
+                                                                    .build()));
+                                                } catch (JsonProcessingException e) {
+                                                    return Mono.just("{\"code\":\"CHECKS_FAIL\"}");
+                                                }
+                                            })
+                                            .switchIfEmpty(
                                     sessionRepository.findActiveSession(request.getToken(), Instant.now())
                                             .flatMap(session -> {
-                                                log.info(">>>>>>>>>>>>>>>>>>>>>>>> Processing new rollback transaction: {}", request.getData().getTransactionId());
+                                                log.info("Processing new rollback transaction: {}", request.getData().getTransactionId());
                                                 ExternalGameSession gameSession = session;
-                                                BigDecimal amount = new BigDecimal(request.getData().getAmount());
+                                                // Refund the ORIGINAL bet amount - the request amount is only logged for audit
+                                                BigDecimal amount = originalBetTxn.getAmount();
+                                                if (request.getData().getAmount() != null
+                                                        && new BigDecimal(request.getData().getAmount()).compareTo(amount) != 0) {
+                                                    log.warn("Rollback amount {} differs from original bet amount {} for debitId={}",
+                                                            request.getData().getAmount(), amount, request.getData().getDebitId());
+                                                }
 
                                                 // Create transaction record
                                                 ExternalGameTxn txn = ExternalGameTxn.builder()
@@ -830,7 +912,8 @@ public class GoldenEggsIntegrationService {
                                                                             request.getData().getCurrency(),
                                                                             request.getData().getTransactionId(),
                                                                             request.getData().getDebitId(),
-                                                                            request.getData().getGameId()
+                                                                            request.getData().getGameId(),
+                                                                            originalBetTxn.getPaymentSources()
                                                                     )
                                                                     .flatMap(walletResult -> {
                                                                         try {
@@ -877,7 +960,7 @@ public class GoldenEggsIntegrationService {
                                                     return "{\"code\":\"INVALID_TOKEN\"}";
                                                 }
                                             }))
-                            );
+                                            )));
                 })
                 .switchIfEmpty(Mono.defer(() -> {
                     // Original BET transaction not found or not successful

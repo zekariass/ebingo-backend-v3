@@ -12,11 +12,26 @@ public interface TotalAgentAccountingRepository extends ReactiveCrudRepository<T
 
     Mono<TotalAgentAccounting> findByAgentId(Long agentId);
 
+    /**
+     * Atomically apply a settlement to the agent's total accounting.
+     * Returns empty if no total accounting row exists for the agent.
+     */
+    @Query("""
+              UPDATE total_agent_accounting
+              SET last_settled_at = NOW(),
+                  last_settled_amount = :amount,
+                  total_settled_amount = total_settled_amount + :amount,
+                  updated_at = NOW()
+              WHERE agent_id = :agentId
+              RETURNING *
+            """)
+    Mono<TotalAgentAccounting> applySettlement(Long agentId, BigDecimal amount);
+
     @Query("""
               INSERT INTO total_agent_accounting(
-                agent_id, total_deposit_amount, last_settled_at, last_settled_amount, total_settled_amount, created_at, updated_at
+                agent_id, total_deposit_amount, created_at, updated_at
               )
-              VALUES (:agentId, :amount, NOW(), 0.00, 0.00, NOW(), NOW())
+              VALUES (:agentId, :amount, NOW(), NOW())
               ON CONFLICT (agent_id)
               DO UPDATE SET
                 total_deposit_amount = total_agent_accounting.total_deposit_amount + EXCLUDED.total_deposit_amount,
@@ -27,9 +42,9 @@ public interface TotalAgentAccountingRepository extends ReactiveCrudRepository<T
 
     @Query("""
               INSERT INTO total_agent_accounting(
-                agent_id, total_withdrawal_amount, last_settled_at, last_settled_amount, total_settled_amount, created_at, updated_at
+                agent_id, total_withdrawal_amount, created_at, updated_at
               )
-              VALUES (:agentId, :amount, NOW(), 0.00, 0.00, NOW(), NOW())
+              VALUES (:agentId, :amount, NOW(), NOW())
               ON CONFLICT (agent_id)
               DO UPDATE SET
                 total_withdrawal_amount = total_agent_accounting.total_withdrawal_amount + EXCLUDED.total_withdrawal_amount,
@@ -43,9 +58,9 @@ public interface TotalAgentAccountingRepository extends ReactiveCrudRepository<T
                 agent_id,
                 total_bet_amount, total_prize_amount, total_commission_amount,
                 total_bot_win_amount, total_bot_loss_amount,
-                last_settled_at, last_settled_amount, total_settled_amount, created_at, updated_at
+                created_at, updated_at
               )
-              VALUES (:agentId, :bet, :prize, :commission, :botWin, :botLoss, NOW(), 0.00, 0.00, NOW(), NOW())
+              VALUES (:agentId, :bet, :prize, :commission, :botWin, :botLoss, NOW(), NOW())
               ON CONFLICT (agent_id)
               DO UPDATE SET
                 total_bet_amount = total_agent_accounting.total_bet_amount + EXCLUDED.total_bet_amount,
@@ -67,9 +82,9 @@ public interface TotalAgentAccountingRepository extends ReactiveCrudRepository<T
 
     @Query("""
               INSERT INTO total_agent_accounting(
-                agent_id, total_promotional_bonus_amount, last_settled_at, last_settled_amount, total_settled_amount, created_at, updated_at
+                agent_id, total_promotional_bonus_amount, created_at, updated_at
               )
-              VALUES (:agentId, :amount, NOW(), 0.00, 0.00, NOW(), NOW())
+              VALUES (:agentId, :amount, NOW(), NOW())
               ON CONFLICT (agent_id)
               DO UPDATE SET
                 total_promotional_bonus_amount = total_agent_accounting.total_promotional_bonus_amount + EXCLUDED.total_promotional_bonus_amount,
@@ -80,9 +95,9 @@ public interface TotalAgentAccountingRepository extends ReactiveCrudRepository<T
 
     @Query("""
               INSERT INTO total_agent_accounting(
-                agent_id, total_welcome_bonus_amount, last_settled_at, last_settled_amount, total_settled_amount, created_at, updated_at
+                agent_id, total_welcome_bonus_amount, created_at, updated_at
               )
-              VALUES (:agentId, :amount, NOW(), 0.00, 0.00, NOW(), NOW())
+              VALUES (:agentId, :amount, NOW(), NOW())
               ON CONFLICT (agent_id)
               DO UPDATE SET
                 total_welcome_bonus_amount = total_agent_accounting.total_welcome_bonus_amount + EXCLUDED.total_welcome_bonus_amount,
@@ -93,9 +108,9 @@ public interface TotalAgentAccountingRepository extends ReactiveCrudRepository<T
 
     @Query("""
               INSERT INTO total_agent_accounting(
-                agent_id, total_referral_bonus_amount, last_settled_at, last_settled_amount, total_settled_amount, created_at, updated_at
+                agent_id, total_referral_bonus_amount, created_at, updated_at
               )
-              VALUES (:agentId, :amount, NOW(), 0.00, 0.00, NOW(), NOW())
+              VALUES (:agentId, :amount, NOW(), NOW())
               ON CONFLICT (agent_id)
               DO UPDATE SET
                 total_referral_bonus_amount = total_agent_accounting.total_referral_bonus_amount + EXCLUDED.total_referral_bonus_amount,
@@ -107,9 +122,9 @@ public interface TotalAgentAccountingRepository extends ReactiveCrudRepository<T
     
     @Query("""
               INSERT INTO total_agent_accounting(
-                agent_id, total_deposit_bonus_amount, last_settled_at, last_settled_amount, total_settled_amount, created_at, updated_at
+                agent_id, total_deposit_bonus_amount, created_at, updated_at
               )
-              VALUES (:agentId, :add, NOW(), 0.00, 0.00, NOW(), NOW())
+              VALUES (:agentId, :add, NOW(), NOW())
               ON CONFLICT (agent_id)
               DO UPDATE SET
                 total_deposit_bonus_amount = total_agent_accounting.total_deposit_bonus_amount + EXCLUDED.total_deposit_bonus_amount,

@@ -20,7 +20,7 @@ CREATE TABLE golden_eggs_bonus (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_bonus_user FOREIGN KEY (user_id) REFERENCES user_profile(id) ON DELETE CASCADE,
-    CONSTRAINT fk_bonus_agent FOREIGN KEY (agent_id) REFERENCES agent(id) ON DELETE CASCADE
+    CONSTRAINT fk_bonus_agent FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
 );
 
 -- Indexes for golden_eggs_bonus
@@ -47,7 +47,7 @@ CREATE TABLE golden_eggs_bonus_transaction (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_bonus_txn_bonus FOREIGN KEY (bonus_id) REFERENCES golden_eggs_bonus(bonus_id) ON DELETE CASCADE,
     CONSTRAINT fk_bonus_txn_user FOREIGN KEY (user_id) REFERENCES user_profile(id) ON DELETE CASCADE,
-    CONSTRAINT fk_bonus_txn_agent FOREIGN KEY (agent_id) REFERENCES agent(id) ON DELETE CASCADE
+    CONSTRAINT fk_bonus_txn_agent FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
 );
 
 -- Indexes for golden_eggs_bonus_transaction

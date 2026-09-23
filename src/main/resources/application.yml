@@ -43,7 +43,7 @@ spring:
           max-wait: 5s           # how long to wait for a connection from the pool before failing
 
 server:
-  port: 8080
+  port: 8090
 
 management:
   endpoints:

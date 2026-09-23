@@ -19,4 +19,7 @@ public interface ExternalGameTxnRepository extends ReactiveCrudRepository<Extern
 
     @Query("SELECT * FROM external_game_txns WHERE action = 'BET' AND provider_transaction_id = :debitId AND status = 'SUCCESS' ORDER BY created_at DESC LIMIT 1")
     Mono<ExternalGameTxn> findSuccessfulBetByDebitId(UUID debitId);
+
+    @Query("SELECT * FROM external_game_txns WHERE action = 'WITHDRAW' AND debit_id = :debitId AND status = 'SUCCESS' ORDER BY created_at DESC LIMIT 1")
+    Mono<ExternalGameTxn> findSuccessfulWithdrawByDebitId(UUID debitId);
 }

@@ -149,9 +149,11 @@ public class GoldenEggsAccountingController {
      * PUT /external-games/golden-eggs/accounting/daily/{id}/settle
      */
     @PutMapping(value = "/daily/{id}/settle", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ResponseEntity<ApiResponse<GoldenEggsDailyAccounting>>> settleDailyAccounting(@PathVariable Long id) {
-        log.info("Request to settle daily accounting: id={}", id);
-        return accountingService.settleDailyAccounting(id)
+    public Mono<ResponseEntity<ApiResponse<GoldenEggsDailyAccounting>>> settleDailyAccounting(
+            @RequestParam Long agentId,
+            @PathVariable Long id) {
+        log.info("Request to settle daily accounting: id={}, agentId={}", id, agentId);
+        return accountingService.settleDailyAccounting(agentId, id)
                 .map(accounting -> ResponseEntity.ok(
                         ApiResponse.<GoldenEggsDailyAccounting>builder()
                                 .success(true)
@@ -175,9 +177,11 @@ public class GoldenEggsAccountingController {
      * PUT /external-games/golden-eggs/accounting/daily/{id}/unsettle
      */
     @PutMapping(value = "/daily/{id}/unsettle", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ResponseEntity<ApiResponse<GoldenEggsDailyAccounting>>> unsettleDailyAccounting(@PathVariable Long id) {
-        log.info("Request to unsettle daily accounting: id={}", id);
-        return accountingService.unsettleDailyAccounting(id)
+    public Mono<ResponseEntity<ApiResponse<GoldenEggsDailyAccounting>>> unsettleDailyAccounting(
+            @RequestParam Long agentId,
+            @PathVariable Long id) {
+        log.info("Request to unsettle daily accounting: id={}, agentId={}", id, agentId);
+        return accountingService.unsettleDailyAccounting(agentId, id)
                 .map(accounting -> ResponseEntity.ok(
                         ApiResponse.<GoldenEggsDailyAccounting>builder()
                                 .success(true)
@@ -201,9 +205,11 @@ public class GoldenEggsAccountingController {
      * GET /external-games/golden-eggs/accounting/daily/id/{id}
      */
     @GetMapping(value = "/daily/id/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<ResponseEntity<ApiResponse<GoldenEggsDailyAccounting>>> getDailyAccountingById(@PathVariable Long id) {
-        log.info("Request for daily accounting by id: id={}", id);
-        return accountingService.getDailyAccounting(id)
+    public Mono<ResponseEntity<ApiResponse<GoldenEggsDailyAccounting>>> getDailyAccountingById(
+            @RequestParam Long agentId,
+            @PathVariable Long id) {
+        log.info("Request for daily accounting by id: id={}, agentId={}", id, agentId);
+        return accountingService.getDailyAccounting(agentId, id)
                 .map(accounting -> ResponseEntity.ok(
                         ApiResponse.<GoldenEggsDailyAccounting>builder()
                                 .success(true)

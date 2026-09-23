@@ -1,5 +1,7 @@
 package com.ebingo.backend.payment.service;
 
+import com.ebingo.backend.agent.entity.AgentDepositConfig;
+import com.ebingo.backend.agent.service.AgentDepositConfigService;
 import com.ebingo.backend.common.Util;
 import com.ebingo.backend.common.service.DailyAgentAccountingService;
 import com.ebingo.backend.common.service.DailyLeaderboardService;
@@ -24,7 +26,6 @@ import com.ebingo.backend.user.mappers.UserProfileMapper;
 import com.ebingo.backend.user.service.UserProfileService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.ReactiveTransactionManager;
 import org.springframework.transaction.reactive.TransactionalOperator;
@@ -48,30 +49,8 @@ public class WalletServiceImpl implements WalletService {
     private final BingoGameMetricsRedisService bingoGameMetricsRedisService;
     private final DailyAgentAccountingService dailyAgentAccountingService;
     private final TotalAgentAccountingService totalAgentAccountingService;
-
-    @Value("${deposit.bonusAmount.rate:0.0}")
-    private BigDecimal depositBonusAmountRate;
-
-    @Value("${deposit.bonusAmount.fixed:0.0}")
-    private BigDecimal depositBonusAmountFixed;
-
-    @Value("${deposit.bonusAmount.max.isCaped:false}")
-    private Boolean bonusIsCaped;
-
-    @Value("${deposit.bonusAmount.max.amount:0.0}")
-    private BigDecimal maxBonusAmount;
-
-    @Value("${deposit.lockAmount.rate:0.0}")
-    private BigDecimal depositLockAmountRate;
-
-    @Value("${deposit.lockAmount.fixed:0.0}")
-    private BigDecimal depositLockAmountFixed;
-
-    @Value("${deposit.lockAmount.max.isCaped:false}")
-    private Boolean lockIsCaped;
-
-    @Value("${deposit.lockAmount.max.amount:0.0}")
-    private BigDecimal maxLockAmount;
+    private final AgentDepositConfigService agentDepositConfigService;
+    private final TransactionalOperator transactionalOperator;
 
 
     @Override
@@ -649,83 +628,75 @@ public class WalletServiceImpl implements WalletService {
                                     wallet.setAvailableWelcomeBonus(defaultZero(wallet.getAvailableWelcomeBonus()));
                                     wallet.setPromotionalBonus(defaultZero(wallet.getPromotionalBonus()));
 
-                                    // Variables to update accounting
-                                    BigDecimal txnAmount = BigDecimal.ZERO;
-                                    BigDecimal bonusAmount = BigDecimal.ZERO;
+                                    // Per-agent deposit rules (falls back to global application.yml defaults)
+                                    return agentDepositConfigService.getEffectiveConfig(wallet.getAgentId())
+                                            .flatMap(depositConfig -> {
 
-                                    // === Transaction logic ===
-                                    if (TransactionType.DEPOSIT.equals(transactionType)) {
-                                        BigDecimal depositBonus =
-                                                amount.multiply(depositBonusAmountRate).add(depositBonusAmountFixed);
+                                                // Variables to update accounting
+                                                BigDecimal txnAmount = BigDecimal.ZERO;
+                                                BigDecimal bonusAmount = BigDecimal.ZERO;
 
-                                        if (Boolean.TRUE.equals(bonusIsCaped) &&
-                                                depositBonus.compareTo(maxBonusAmount) > 0) {
-                                            depositBonus = maxBonusAmount;
-                                        }
+                                                // === Transaction logic ===
+                                                if (TransactionType.DEPOSIT.equals(transactionType)) {
+                                                    DepositAmounts depositAmounts = computeDepositAmounts(amount, depositConfig);
 
-                                        BigDecimal depositLockAmount =
-                                                amount.add(depositBonus)
-                                                        .multiply(depositLockAmountRate)
-                                                        .add(depositLockAmountFixed);
+                                                    wallet.setDepositBonus(wallet.getDepositBonus().add(depositAmounts.bonus()));
+                                                    wallet.setLockedAmount(wallet.getLockedAmount().add(depositAmounts.lock()));
+                                                    wallet.setTotalAvailableBalance(
+                                                            wallet.getTotalAvailableBalance().add(depositAmounts.bonus())
+                                                    );
 
-                                        if (Boolean.TRUE.equals(lockIsCaped) &&
-                                                depositLockAmount.compareTo(maxLockAmount) > 0) {
-                                            depositLockAmount = maxLockAmount;
-                                        }
+                                                    txnAmount = amount;
+                                                    bonusAmount = depositAmounts.bonus();
+                                                }
 
-                                        wallet.setDepositBonus(wallet.getDepositBonus().add(depositBonus));
-                                        wallet.setLockedAmount(wallet.getLockedAmount().add(depositLockAmount));
-                                        wallet.setTotalAvailableBalance(
-                                                wallet.getTotalAvailableBalance().add(depositBonus)
-                                        );
+                                                if (TransactionType.REFERRAL_BONUS.equals(transactionType)) {
+                                                    wallet.setReferralBonus(wallet.getReferralBonus().add(amount));
+                                                    wallet.setAvailableReferralBonus(wallet.getAvailableReferralBonus().add(amount));
+                                                    bonusAmount = amount;
+                                                }
 
-                                        txnAmount = amount;
-                                        bonusAmount = depositBonus;
-                                    }
+                                                if (TransactionType.WELCOME_BONUS.equals(transactionType)) {
+                                                    wallet.setWelcomeBonus(wallet.getWelcomeBonus().add(amount));
+                                                    wallet.setAvailableWelcomeBonus(wallet.getAvailableWelcomeBonus().add(amount));
+                                                    bonusAmount = amount;
+                                                }
 
-                                    if (TransactionType.REFERRAL_BONUS.equals(transactionType)) {
-                                        wallet.setReferralBonus(wallet.getReferralBonus().add(amount));
-                                        wallet.setAvailableReferralBonus(wallet.getAvailableReferralBonus().add(amount));
-                                        bonusAmount = amount;
-                                    }
+                                                if (TransactionType.PROMOTIONAL_BONUS.equals(transactionType)) {
+                                                    wallet.setPromotionalBonus(wallet.getPromotionalBonus().add(amount));
+                                                    bonusAmount = amount;
+                                                }
 
-                                    if (TransactionType.WELCOME_BONUS.equals(transactionType)) {
-                                        wallet.setWelcomeBonus(wallet.getWelcomeBonus().add(amount));
-                                        wallet.setAvailableWelcomeBonus(wallet.getAvailableWelcomeBonus().add(amount));
-                                        bonusAmount = amount;
-                                    }
+                                                // === availableToWithdraw ===
+                                                BigDecimal availableToWithdraw = wallet.getTotalAvailableBalance()
+                                                        .subtract(wallet.getAvailableWelcomeBonus())
+                                                        .subtract(wallet.getAvailableReferralBonus())
+                                                        .subtract(wallet.getPromotionalBonus())
+                                                        .subtract(wallet.getLockedAmount())
+                                                        .subtract(wallet.getDepositBonus());
 
-                                    if (TransactionType.PROMOTIONAL_BONUS.equals(transactionType)) {
-                                        wallet.setPromotionalBonus(wallet.getPromotionalBonus().add(amount));
-                                        bonusAmount = amount;
-                                    }
+                                                wallet.setAvailableToWithdraw(
+                                                        availableToWithdraw.max(BigDecimal.ZERO)
+                                                );
 
-                                    // === availableToWithdraw ===
-                                    BigDecimal availableToWithdraw = wallet.getTotalAvailableBalance()
-                                            .subtract(wallet.getAvailableWelcomeBonus())
-                                            .subtract(wallet.getAvailableReferralBonus())
-                                            .subtract(wallet.getPromotionalBonus())
-                                            .subtract(wallet.getLockedAmount())
-                                            .subtract(wallet.getDepositBonus());
+                                                // === Leaderboards ===
+                                                Mono<Void> leaderboardUpdate = Mono.empty();
+                                                if (TransactionType.DEPOSIT.equals(transactionType)) {
+                                                    leaderboardUpdate =
+                                                            dailyLeaderboardService.incrementDailyDeposit(userProfileId, amount, userProfile.getAgentId())
+                                                                    .then(totalLeaderboardService.incrementTotalDeposit(userProfileId, amount, userProfile.getAgentId()));
+                                                }
 
-                                    wallet.setAvailableToWithdraw(
-                                            availableToWithdraw.max(BigDecimal.ZERO)
-                                    );
-
-                                    // === Leaderboards ===
-                                    Mono<Void> leaderboardUpdate = Mono.empty();
-                                    if (TransactionType.DEPOSIT.equals(transactionType)) {
-                                        leaderboardUpdate =
-                                                dailyLeaderboardService.incrementDailyDeposit(userProfileId, amount, userProfile.getAgentId())
-                                                        .then(totalLeaderboardService.incrementTotalDeposit(userProfileId, amount, userProfile.getAgentId()));
-                                    }
-
-                                    final BigDecimal txnAmountFinal = txnAmount;
-                                    final BigDecimal bonusAmountFinal = bonusAmount;
-                                    return walletRepository.save(wallet)
-                                            .then(accountingUpdate(wallet.getAgentId(), transactionType, txnAmountFinal, bonusAmountFinal))
-                                            .then(leaderboardUpdate)
-                                            .thenReturn(wallet);
+                                                final BigDecimal txnAmountFinal = txnAmount;
+                                                final BigDecimal bonusAmountFinal = bonusAmount;
+                                                final Mono<Void> leaderboardUpdateFinal = leaderboardUpdate;
+                                                // Wallet save + accounting upserts commit or roll back together
+                                                return walletRepository.save(wallet)
+                                                        .then(accountingUpdate(wallet.getAgentId(), transactionType, txnAmountFinal, bonusAmountFinal))
+                                                        .thenReturn(wallet)
+                                                        .as(transactionalOperator::transactional)
+                                                        .flatMap(saved -> leaderboardUpdateFinal.thenReturn(saved));
+                                            });
                                 })
                                 .flatMap(savedWallet -> {
                                     // === Cache eviction AFTER successful save ===
@@ -745,6 +716,33 @@ public class WalletServiceImpl implements WalletService {
                 .doOnError(e ->
                         log.error("Failed to credit wallet | userProfileId={}", userProfileId, e)
                 );
+    }
+
+    /**
+     * Computes the deposit bonus and lock amount for a DEPOSIT credit using the
+     * agent's effective deposit config (DB row or global defaults).
+     * bonus = amount * rate + fixed (optionally capped)
+     * lock  = (amount + bonus) * rate + fixed (optionally capped)
+     */
+    private DepositAmounts computeDepositAmounts(BigDecimal amount, AgentDepositConfig config) {
+        BigDecimal bonus = amount.multiply(config.getBonusRate()).add(config.getBonusFixed());
+        if (Boolean.TRUE.equals(config.getBonusCapEnabled())
+                && bonus.compareTo(config.getBonusCapAmount()) > 0) {
+            bonus = config.getBonusCapAmount();
+        }
+
+        BigDecimal lock = amount.add(bonus)
+                .multiply(config.getLockRate())
+                .add(config.getLockFixed());
+        if (Boolean.TRUE.equals(config.getLockCapEnabled())
+                && lock.compareTo(config.getLockCapAmount()) > 0) {
+            lock = config.getLockCapAmount();
+        }
+
+        return new DepositAmounts(bonus, lock);
+    }
+
+    private record DepositAmounts(BigDecimal bonus, BigDecimal lock) {
     }
 
     private Mono<Void> accountingUpdate(Long agentId, TransactionType transactionType, BigDecimal txnAmountFinal, BigDecimal bonusAmountFinal) {

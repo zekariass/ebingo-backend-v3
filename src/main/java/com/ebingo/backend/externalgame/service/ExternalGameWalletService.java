@@ -110,9 +110,6 @@ public class ExternalGameWalletService {
 
         String lastPaymentFrom = "";
 
-        // To track bonus usage if needed for accounting (kept since you had it in the logic)
-        BigDecimal totalTakenFromBonus = BigDecimal.ZERO;
-
         // 2️⃣ Debit Welcome Bonus
         if (remaining.compareTo(BigDecimal.ZERO) > 0 &&
                 wallet.getAvailableWelcomeBonus().compareTo(BigDecimal.ZERO) > 0) {
@@ -121,7 +118,6 @@ public class ExternalGameWalletService {
             wallet.setAvailableWelcomeBonus(wallet.getAvailableWelcomeBonus().subtract(usedFromWelcome));
             wallet.setWelcomeBonus(wallet.getWelcomeBonus().subtract(usedFromWelcome));
             remaining = remaining.subtract(usedFromWelcome);
-            totalTakenFromBonus = totalTakenFromBonus.add(usedFromWelcome);
             lastPaymentFrom += "WELCOME_BONUS/" + usedFromWelcome.toPlainString();
         }
 
@@ -133,7 +129,6 @@ public class ExternalGameWalletService {
             wallet.setAvailableReferralBonus(wallet.getAvailableReferralBonus().subtract(usedFromReferral));
             wallet.setReferralBonus(wallet.getReferralBonus().subtract(usedFromReferral));
             remaining = remaining.subtract(usedFromReferral);
-            totalTakenFromBonus = totalTakenFromBonus.add(usedFromReferral);
             lastPaymentFrom += "*REFERRAL_BONUS/" + usedFromReferral.toPlainString();
         }
 
@@ -144,7 +139,6 @@ public class ExternalGameWalletService {
             usedFromPromotional = wallet.getPromotionalBonus().min(remaining);
             wallet.setPromotionalBonus(wallet.getPromotionalBonus().subtract(usedFromPromotional));
             remaining = remaining.subtract(usedFromPromotional);
-            totalTakenFromBonus = totalTakenFromBonus.add(usedFromPromotional);
             lastPaymentFrom += "*PROMOTIONAL_BONUS/" + usedFromPromotional.toPlainString();
         }
 
@@ -165,13 +159,13 @@ public class ExternalGameWalletService {
             usedFromDeposit = wallet.getDepositBonus().min(remaining);
             wallet.setDepositBonus(wallet.getDepositBonus().subtract(usedFromDeposit));
             remaining = remaining.subtract(usedFromDeposit);
-            totalTakenFromBonus = totalTakenFromBonus.add(usedFromDeposit);
             lastPaymentFrom += "*DEPOSIT_BONUS/" + usedFromDeposit.toPlainString();
         }
 
-        wallet.setLastPaymentFrom(lastPaymentFrom.startsWith("*")
+        String paymentSources = lastPaymentFrom.startsWith("*")
                 ? lastPaymentFrom.substring(1)
-                : lastPaymentFrom);
+                : lastPaymentFrom;
+        wallet.setLastPaymentFrom(paymentSources);
 
         // 7️⃣ Deduct full amount from totalAvailableBalance
         wallet.setTotalAvailableBalance(wallet.getTotalAvailableBalance().subtract(roundedAmount));
@@ -190,11 +184,13 @@ public class ExternalGameWalletService {
         }
         wallet.setAvailableToWithdraw(availableToWithdraw);
 
+        String finalPaymentSources = paymentSources;
         return walletRepository.save(wallet)
                 .map(savedWallet -> WalletResult.builder()
                         .success(true)
                         .balance(formatBalance(savedWallet.getTotalAvailableBalance(), currency))
                         .balanceAmount(savedWallet.getTotalAvailableBalance())
+                        .paymentSources(finalPaymentSources)
                         .build());
     }
 
@@ -260,14 +256,15 @@ public class ExternalGameWalletService {
             String currency,
             UUID providerTxnId,
             UUID debitId,
-            UUID gameId
+            UUID gameId,
+            String paymentSources
     ) {
         log.info("External game rollback: userId={}, amount={}, currency={}, txnId={}",
                 userId, amount, currency, providerTxnId);
 
         return walletRepository.findByUserProfileId(userId)
                 .switchIfEmpty(Mono.error(new ResourceNotFoundException("Wallet not found for user: " + userId)))
-                .flatMap(wallet -> processRollback(wallet, amount, currency))
+                .flatMap(wallet -> processRollback(wallet, amount, currency, paymentSources))
                 .retryWhen(Retry.backoff(3, Duration.ofMillis(50))
                         .filter(throwable -> throwable instanceof OptimisticLockingFailureException))
                 .as(transactionalOperator::transactional)
@@ -303,21 +300,22 @@ public class ExternalGameWalletService {
 //    }
 
 
-    private Mono<WalletResult> processRollback(Wallet wallet, BigDecimal amount, String currency) {
+    private Mono<WalletResult> processRollback(Wallet wallet, BigDecimal amount, String currency, String paymentSources) {
         BigDecimal roundedAmount = roundAmount(amount, currency);
 
         // 1️⃣ Always restore total balance
         wallet.setTotalAvailableBalance(wallet.getTotalAvailableBalance().add(roundedAmount));
 
-        // 2️⃣ Restore the same “buckets” used during debit using lastPaymentFrom
-        String lastPaymentFrom = wallet.getLastPaymentFrom();
-
+        // 2️⃣ Restore the same “buckets” used during the ORIGINAL debit.
+        // The breakdown is stored per-transaction (payment_sources) because
+        // wallet.lastPaymentFrom only reflects the most recent debit and would
+        // restore the wrong buckets when debits/rollbacks interleave.
         BigDecimal explainedBySources = BigDecimal.ZERO;
 
-        if (lastPaymentFrom != null && !lastPaymentFrom.isBlank()) {
+        if (paymentSources != null && !paymentSources.isBlank()) {
 
             // Expected: WELCOME_BONUS/20.00*REFERRAL_BONUS/40.00*LOCKED_AMOUNT/10.50
-            String[] sources = lastPaymentFrom.split("\\*");
+            String[] sources = paymentSources.split("\\*");
 
             for (String entry : sources) {
 
@@ -377,14 +375,7 @@ public class ExternalGameWalletService {
             }
         }
 
-        // 3️⃣ If lastPaymentFrom didn't fully explain the refund (or was missing),
-        // put the remainder into "availableToWithdraw" (real-money bucket).
-        BigDecimal remainder = roundedAmount.subtract(explainedBySources);
-        if (remainder.compareTo(BigDecimal.ZERO) > 0) {
-            wallet.setAvailableToWithdraw(wallet.getAvailableToWithdraw().add(remainder));
-        }
-
-        // 4️⃣ Recompute availableToWithdraw using the same rule used after debit
+        // 3️⃣ Recompute availableToWithdraw using the same rule used after debit
         BigDecimal computedAvailableToWithdraw = wallet.getTotalAvailableBalance()
                 .subtract(wallet.getAvailableWelcomeBonus())
                 .subtract(wallet.getAvailableReferralBonus())

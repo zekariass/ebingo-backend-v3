@@ -5,6 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Transient;
+import org.springframework.data.domain.Persistable;
 import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 
@@ -17,7 +19,7 @@ import java.util.UUID;
 @AllArgsConstructor
 @Builder
 @Table("golden_eggs_bonus_transaction")
-public class GoldenEggsBonusTransaction {
+public class GoldenEggsBonusTransaction implements Persistable<UUID> {
 
     @Id
     private UUID id;
@@ -51,4 +53,18 @@ public class GoldenEggsBonusTransaction {
 
     @Column("created_at")
     private Instant createdAt;
+
+    @Transient
+    @Builder.Default
+    private boolean isNew = true;
+
+    @Override
+    public UUID getId() {
+        return id;
+    }
+
+    @Override
+    public boolean isNew() {
+        return isNew;
+    }
 }

@@ -6,10 +6,12 @@ import com.ebingo.backend.externalgame.repository.GoldenEggsDailyAccountingRepos
 import com.ebingo.backend.externalgame.repository.GoldenEggsTotalAccountingRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.retry.Retry;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -78,7 +80,7 @@ public class GoldenEggsAccountingService {
      */
     private Mono<GoldenEggsDailyAccounting> updateDailyAccountingForBet(LocalDate date, BigDecimal betAmount, Long agentId) {
         return dailyAccountingRepository.findByAgentIdAndAccountingDate(agentId, date)
-                .switchIfEmpty(createNewDailyAccounting(date, agentId))
+                .switchIfEmpty(Mono.defer(() -> Mono.just(newDailyAccounting(date, agentId))))
                 .flatMap(accounting -> {
                     accounting.setDailyBetsCount(accounting.getDailyBetsCount() + 1);
                     accounting.setDailyBetsAmount(accounting.getDailyBetsAmount().add(betAmount));
@@ -95,7 +97,11 @@ public class GoldenEggsAccountingService {
                     accounting.setUpdatedAt(Instant.now());
                     
                     return dailyAccountingRepository.save(accounting);
-                });
+                })
+                // Concurrent create hits the unique (agent_id, accounting_date) constraint;
+                // concurrent updates hit the optimistic version check - retry the whole read-modify-write
+                .retryWhen(Retry.max(3)
+                        .filter(t -> t instanceof DuplicateKeyException || t instanceof OptimisticLockingFailureException));
     }
 
     /**
@@ -103,7 +109,7 @@ public class GoldenEggsAccountingService {
      */
     private Mono<GoldenEggsDailyAccounting> updateDailyAccountingForWin(LocalDate date, BigDecimal winAmount, Long agentId) {
         return dailyAccountingRepository.findByAgentIdAndAccountingDate(agentId, date)
-                .switchIfEmpty(createNewDailyAccounting(date, agentId))
+                .switchIfEmpty(Mono.defer(() -> Mono.just(newDailyAccounting(date, agentId))))
                 .flatMap(accounting -> {
                     accounting.setDailyWinsAmount(accounting.getDailyWinsAmount().add(winAmount));
                     
@@ -119,7 +125,9 @@ public class GoldenEggsAccountingService {
                     accounting.setUpdatedAt(Instant.now());
                     
                     return dailyAccountingRepository.save(accounting);
-                });
+                })
+                .retryWhen(Retry.max(3)
+                        .filter(t -> t instanceof DuplicateKeyException || t instanceof OptimisticLockingFailureException));
     }
 
     /**
@@ -127,7 +135,7 @@ public class GoldenEggsAccountingService {
      */
     private Mono<GoldenEggsDailyAccounting> updateDailyAccountingForRollback(LocalDate date, BigDecimal rollbackAmount, Long agentId) {
         return dailyAccountingRepository.findByAgentIdAndAccountingDate(agentId, date)
-                .switchIfEmpty(createNewDailyAccounting(date, agentId))
+                .switchIfEmpty(Mono.defer(() -> Mono.just(newDailyAccounting(date, agentId))))
                 .flatMap(accounting -> {
                     accounting.setDailyRollbackCount(accounting.getDailyRollbackCount() + 1);
                     accounting.setDailyRollbackAmount(accounting.getDailyRollbackAmount().add(rollbackAmount));
@@ -148,7 +156,9 @@ public class GoldenEggsAccountingService {
                     accounting.setUpdatedAt(Instant.now());
                     
                     return dailyAccountingRepository.save(accounting);
-                });
+                })
+                .retryWhen(Retry.max(3)
+                        .filter(t -> t instanceof DuplicateKeyException || t instanceof OptimisticLockingFailureException));
     }
 
     /**
@@ -172,7 +182,9 @@ public class GoldenEggsAccountingService {
                     accounting.setUpdatedAt(Instant.now());
                     
                     return totalAccountingRepository.save(accounting);
-                });
+                })
+                .retryWhen(Retry.max(3)
+                        .filter(t -> t instanceof DuplicateKeyException || t instanceof OptimisticLockingFailureException));
     }
 
     /**
@@ -195,7 +207,9 @@ public class GoldenEggsAccountingService {
                     accounting.setUpdatedAt(Instant.now());
                     
                     return totalAccountingRepository.save(accounting);
-                });
+                })
+                .retryWhen(Retry.max(3)
+                        .filter(t -> t instanceof DuplicateKeyException || t instanceof OptimisticLockingFailureException));
     }
 
     /**
@@ -223,7 +237,9 @@ public class GoldenEggsAccountingService {
                     accounting.setUpdatedAt(Instant.now());
                     
                     return totalAccountingRepository.save(accounting);
-                });
+                })
+                .retryWhen(Retry.max(3)
+                        .filter(t -> t instanceof DuplicateKeyException || t instanceof OptimisticLockingFailureException));
     }
 
     /**
@@ -231,14 +247,16 @@ public class GoldenEggsAccountingService {
      */
     private Mono<GoldenEggsTotalAccounting> getTotalAccounting(Long agentId) {
         return totalAccountingRepository.findByAgentId(agentId)
-                .switchIfEmpty(createNewTotalAccounting(agentId));
+                .switchIfEmpty(Mono.defer(() -> Mono.just(newTotalAccounting(agentId))));
     }
 
     /**
-     * Create new daily accounting record
+     * Build a new (unsaved) daily accounting record.
+     * The caller mutates and saves it exactly once - saving here as well would
+     * double-insert and race on the unique (agent_id, accounting_date) constraint.
      */
-    private Mono<GoldenEggsDailyAccounting> createNewDailyAccounting(LocalDate date, Long agentId) {
-        GoldenEggsDailyAccounting accounting = GoldenEggsDailyAccounting.builder()
+    private GoldenEggsDailyAccounting newDailyAccounting(LocalDate date, Long agentId) {
+        return GoldenEggsDailyAccounting.builder()
                 .agentId(agentId)
                 .accountingDate(date)
                 .dailyBetsCount(0L)
@@ -252,15 +270,13 @@ public class GoldenEggsAccountingService {
                 .createdAt(Instant.now())
                 .updatedAt(Instant.now())
                 .build();
-        
-        return dailyAccountingRepository.save(accounting);
     }
 
     /**
-     * Create new total accounting record
+     * Build a new (unsaved) total accounting record.
      */
-    private Mono<GoldenEggsTotalAccounting> createNewTotalAccounting(Long agentId) {
-        GoldenEggsTotalAccounting accounting = GoldenEggsTotalAccounting.builder()
+    private GoldenEggsTotalAccounting newTotalAccounting(Long agentId) {
+        return GoldenEggsTotalAccounting.builder()
                 .agentId(agentId)
                 .totalBetsCount(0L)
                 .totalBetsAmount(BigDecimal.ZERO)
@@ -272,8 +288,6 @@ public class GoldenEggsAccountingService {
                 .createdAt(Instant.now())
                 .updatedAt(Instant.now())
                 .build();
-        
-        return totalAccountingRepository.save(accounting);
     }
 
     /**
@@ -291,10 +305,11 @@ public class GoldenEggsAccountingService {
     }
 
     /**
-     * Get daily accounting by ID
+     * Get daily accounting by ID, scoped to an agent
      */
-    public Mono<GoldenEggsDailyAccounting> getDailyAccounting(Long id) {
-        return dailyAccountingRepository.findById(id);
+    public Mono<GoldenEggsDailyAccounting> getDailyAccounting(Long agentId, Long id) {
+        return dailyAccountingRepository.findById(id)
+                .filter(accounting -> accounting.getAgentId() != null && accounting.getAgentId().equals(agentId));
     }
 
     /**
@@ -319,10 +334,11 @@ public class GoldenEggsAccountingService {
     }
 
     /**
-     * Mark daily accounting as settled
+     * Mark daily accounting as settled, scoped to an agent
      */
-    public Mono<GoldenEggsDailyAccounting> settleDailyAccounting(Long id) {
+    public Mono<GoldenEggsDailyAccounting> settleDailyAccounting(Long agentId, Long id) {
         return dailyAccountingRepository.findById(id)
+                .filter(accounting -> accounting.getAgentId() != null && accounting.getAgentId().equals(agentId))
                 .flatMap(accounting -> {
                     accounting.setIsSettled(true);
                     accounting.setUpdatedAt(Instant.now());
@@ -332,10 +348,11 @@ public class GoldenEggsAccountingService {
     }
 
     /**
-     * Mark daily accounting as unsettled
+     * Mark daily accounting as unsettled, scoped to an agent
      */
-    public Mono<GoldenEggsDailyAccounting> unsettleDailyAccounting(Long id) {
+    public Mono<GoldenEggsDailyAccounting> unsettleDailyAccounting(Long agentId, Long id) {
         return dailyAccountingRepository.findById(id)
+                .filter(accounting -> accounting.getAgentId() != null && accounting.getAgentId().equals(agentId))
                 .flatMap(accounting -> {
                     accounting.setIsSettled(false);
                     accounting.setUpdatedAt(Instant.now());

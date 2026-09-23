@@ -28,7 +28,6 @@ public class TotalAccountingDto {
     private LocalDateTime lastSettledAt;
     private BigDecimal lastSettledAmount;
     private BigDecimal totalSettledAmount;
-    private LocalDateTime nextSettlementTime;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

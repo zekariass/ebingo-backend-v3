@@ -1,6 +1,10 @@
 package com.ebingo.backend.agent.controller;
 
+import com.ebingo.backend.agent.dto.agent.AgentConfigDto;
+import com.ebingo.backend.agent.dto.agent.AgentDepositConfigDto;
 import com.ebingo.backend.agent.dto.agent.AgentDto;
+import com.ebingo.backend.agent.service.AgentConfigService;
+import com.ebingo.backend.agent.service.AgentDepositConfigService;
 import com.ebingo.backend.agent.service.AgentService;
 import com.ebingo.backend.common.annotation.RequireAccessToken;
 import com.ebingo.backend.common.dto.ApiResponse;
@@ -8,6 +12,7 @@ import com.ebingo.backend.common.dto.PageResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -28,6 +33,8 @@ import java.util.List;
 public class AgentController {
 
     private final AgentService agentService;
+    private final AgentConfigService agentConfigService;
+    private final AgentDepositConfigService agentDepositConfigService;
 
     @GetMapping
     @Operation(summary = "Get all agents", description = "Get all agents with pagination")
@@ -70,6 +77,84 @@ public class AgentController {
                         .build()
                 )
                 .map(ResponseEntity::ok);
+    }
+
+
+    @GetMapping("/{agentId}/bot-config")
+    @Operation(summary = "Get agent bot config", description = "Get per-agent bot configuration (brand name, admin IDs, support handles, bank details) for the Telegram bot server")
+    public Mono<ResponseEntity<ApiResponse<AgentConfigDto>>> getAgentBotConfig(
+            @Parameter(required = true, description = "Agent ID") @PathVariable Long agentId,
+            ServerWebExchange exchange
+    ) {
+        return agentConfigService.getConfig(agentId)
+                .map(config -> ApiResponse.<AgentConfigDto>builder()
+                        .statusCode(HttpStatus.OK.value())
+                        .success(true)
+                        .message("Agent bot config retrieved successfully")
+                        .path(exchange.getRequest().getPath().value())
+                        .timestamp(Instant.now())
+                        .data(config)
+                        .build()
+                )
+                .map(ResponseEntity::ok);
+    }
+
+
+    @GetMapping("/{agentId}/deposit-config")
+    @Operation(summary = "Get own deposit config", description = "Agent fetches its effective deposit bonus/lock rules (stored row, or global defaults when none exists)")
+    public Mono<ResponseEntity<ApiResponse<AgentDepositConfigDto>>> getOwnDepositConfig(
+            @Parameter(required = true, description = "Agent ID") @PathVariable Long agentId,
+            ServerWebExchange exchange
+    ) {
+        return agentDepositConfigService.getConfig(agentId)
+                .map(config -> ApiResponse.<AgentDepositConfigDto>builder()
+                        .statusCode(HttpStatus.OK.value())
+                        .success(true)
+                        .message("Deposit config retrieved successfully")
+                        .path(exchange.getRequest().getPath().value())
+                        .timestamp(Instant.now())
+                        .data(config)
+                        .build()
+                )
+                .map(ResponseEntity::ok);
+    }
+
+    @PutMapping("/{agentId}/deposit-config")
+    @Operation(summary = "Upsert own deposit config", description = "Agent creates or replaces its own deposit bonus/lock rules")
+    public Mono<ResponseEntity<ApiResponse<AgentDepositConfigDto>>> upsertOwnDepositConfig(
+            @Parameter(required = true, description = "Agent ID") @PathVariable Long agentId,
+            @Valid @RequestBody AgentDepositConfigDto dto,
+            ServerWebExchange exchange
+    ) {
+        return agentDepositConfigService.upsertConfig(agentId, dto)
+                .map(config -> ApiResponse.<AgentDepositConfigDto>builder()
+                        .statusCode(HttpStatus.OK.value())
+                        .success(true)
+                        .message("Deposit config saved successfully")
+                        .path(exchange.getRequest().getPath().value())
+                        .timestamp(Instant.now())
+                        .data(config)
+                        .build()
+                )
+                .map(ResponseEntity::ok);
+    }
+
+    @DeleteMapping("/{agentId}/deposit-config")
+    @Operation(summary = "Delete own deposit config", description = "Agent removes its deposit config row, reverting to the global application.yml defaults")
+    public Mono<ResponseEntity<ApiResponse<Void>>> deleteOwnDepositConfig(
+            @Parameter(required = true, description = "Agent ID") @PathVariable Long agentId,
+            ServerWebExchange exchange
+    ) {
+        return agentDepositConfigService.deleteConfig(agentId)
+                .then(Mono.fromSupplier(() -> ResponseEntity.ok(
+                        ApiResponse.<Void>builder()
+                                .statusCode(HttpStatus.OK.value())
+                                .success(true)
+                                .message("Deposit config deleted; global defaults now apply")
+                                .path(exchange.getRequest().getPath().value())
+                                .timestamp(Instant.now())
+                                .build()
+                )));
     }
 
 

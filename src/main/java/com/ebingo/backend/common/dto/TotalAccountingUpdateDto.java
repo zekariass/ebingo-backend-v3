@@ -24,5 +24,4 @@ public class TotalAccountingUpdateDto {
     private BigDecimal totalDepositBonusAmount;
     private LocalDateTime lastSettledAt;
     private BigDecimal settledAmount;
-    private LocalDateTime nextSettlementTime;
 }

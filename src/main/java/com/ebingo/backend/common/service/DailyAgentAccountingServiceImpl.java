@@ -8,7 +8,6 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 
 @Service
 @Slf4j
@@ -22,8 +21,7 @@ public class DailyAgentAccountingServiceImpl implements DailyAgentAccountingServ
         BigDecimal add = nz(depositAmount);
         if (agentId == null || add.signum() == 0) return Mono.empty();
 
-        LocalDate today = LocalDate.now();
-        return dailyAgentAccountingRepository.upsertDeposit(agentId, today, add).then();
+        return dailyAgentAccountingRepository.upsertDeposit(agentId, add).then();
     }
 
     @Override
@@ -31,8 +29,7 @@ public class DailyAgentAccountingServiceImpl implements DailyAgentAccountingServ
         BigDecimal add = nz(withdrawalAmount);
         if (agentId == null || add.signum() == 0) return Mono.empty();
 
-        LocalDate today = LocalDate.now();
-        return dailyAgentAccountingRepository.upsertWithdrawal(agentId, today, add).then();
+        return dailyAgentAccountingRepository.upsertWithdrawal(agentId, add).then();
     }
 
     @Override
@@ -50,9 +47,8 @@ public class DailyAgentAccountingServiceImpl implements DailyAgentAccountingServ
             return Mono.empty();
         }
 
-        LocalDate today = LocalDate.now();
         return dailyAgentAccountingRepository
-                .upsertPrizePayout(agentId, today, bet, prize, commission, botWin, botLoss)
+                .upsertPrizePayout(agentId, bet, prize, commission, botWin, botLoss)
                 .then();
     }
 
@@ -61,8 +57,7 @@ public class DailyAgentAccountingServiceImpl implements DailyAgentAccountingServ
         BigDecimal add = nz(promoBonusAmount);
         if (agentId == null || add.signum() == 0) return Mono.empty();
 
-        LocalDate today = LocalDate.now();
-        return dailyAgentAccountingRepository.upsertPromoBonus(agentId, today, add).then();
+        return dailyAgentAccountingRepository.upsertPromoBonus(agentId, add).then();
     }
 
     @Override
@@ -70,8 +65,7 @@ public class DailyAgentAccountingServiceImpl implements DailyAgentAccountingServ
         BigDecimal add = nz(welcomeBonusAmount);
         if (agentId == null || add.signum() == 0) return Mono.empty();
 
-        LocalDate today = LocalDate.now();
-        return dailyAgentAccountingRepository.upsertWelcomeBonus(agentId, today, add).then();
+        return dailyAgentAccountingRepository.upsertWelcomeBonus(agentId, add).then();
     }
 
     @Override
@@ -79,8 +73,7 @@ public class DailyAgentAccountingServiceImpl implements DailyAgentAccountingServ
         BigDecimal add = nz(referralBonusAmount);
         if (agentId == null || add.signum() == 0) return Mono.empty();
 
-        LocalDate today = LocalDate.now();
-        return dailyAgentAccountingRepository.upsertReferralBonus(agentId, today, add).then();
+        return dailyAgentAccountingRepository.upsertReferralBonus(agentId, add).then();
     }
 
 
@@ -89,8 +82,7 @@ public class DailyAgentAccountingServiceImpl implements DailyAgentAccountingServ
         BigDecimal add = nz(depositBonusAmount);
         if (agentId == null || add.signum() == 0) return Mono.empty();
 
-        LocalDate today = LocalDate.now();
-        return dailyAgentAccountingRepository.upsertDepositBonus(agentId, today, add).then();
+        return dailyAgentAccountingRepository.upsertDepositBonus(agentId, add).then();
     }
 
     private static BigDecimal nz(BigDecimal v) {

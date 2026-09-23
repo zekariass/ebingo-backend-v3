@@ -370,6 +370,10 @@ public class GameTransactionServiceImpl implements GameTransactionService {
                                     // Bot accounting amounts
                                     final BigDecimal botWinAmount = isBotWinner ? payout : BigDecimal.ZERO;
 
+                                    // Prize paid to real players only — bot wins are tracked
+                                    // exclusively via botWinAmount, not as prize payout
+                                    final BigDecimal prizeForAccounting = isBotWinner ? BigDecimal.ZERO : payout;
+
                                     final BigDecimal botLossAmount;
                                     if (isBotWinner) {
                                         botLossAmount = BigDecimal.ZERO;
@@ -388,23 +392,30 @@ public class GameTransactionServiceImpl implements GameTransactionService {
 
                                     return createGameTransaction(dbUserId, payout, gameTxnType, gameId, commissionForTxn, entryFee, agentId)
                                             .flatMap(txnDto ->
+                                                    Mono.when(
+                                                                    dailyAgentAccountingService.updateForPrizePayout(
+                                                                            agentId,
+                                                                            realPot,
+                                                                            prizeForAccounting,
+                                                                            realCommission,
+                                                                            botWinAmount,
+                                                                            botLossAmount
+                                                                    ),
+                                                                    totalAgentAccountingService.updateForPrizePayout(
+                                                                            agentId,
+                                                                            realPot,
+                                                                            prizeForAccounting,
+                                                                            realCommission,
+                                                                            botWinAmount,
+                                                                            botLossAmount
+                                                                    )
+                                                            )
+                                                            .thenReturn(txnDto)
+                                            )
+                                            // Game txn + accounting upserts commit or roll back together
+                                            .as(transactionalOperator::transactional)
+                                            .flatMap(txnDto ->
                                                     updateLeaderboardsOnPrizePayout(dbUserId, payout, entryFee, agentId)
-                                                            .then(dailyAgentAccountingService.updateForPrizePayout(
-                                                                    agentId,
-                                                                    realPot,
-                                                                    payout,
-                                                                    realCommission,
-                                                                    botWinAmount,
-                                                                    botLossAmount
-                                                            ))
-                                                            .then(totalAgentAccountingService.updateForPrizePayout(
-                                                                    agentId,
-                                                                    realPot,
-                                                                    payout,
-                                                                    realCommission,
-                                                                    botWinAmount,
-                                                                    botLossAmount
-                                                            ))
                                                             .thenReturn(txnDto)
                                             );
                                 })

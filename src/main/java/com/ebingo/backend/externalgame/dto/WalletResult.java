@@ -18,4 +18,5 @@ public class WalletResult {
     private String errorCode;
     private String errorMessage;
     private Long walletEntryId;
+    private String paymentSources; // bucket breakdown used for a debit, echoed back for rollback
 }

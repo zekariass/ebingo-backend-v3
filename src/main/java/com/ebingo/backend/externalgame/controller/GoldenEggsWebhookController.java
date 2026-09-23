@@ -81,7 +81,8 @@ public class GoldenEggsWebhookController {
             String action = baseRequest.get("action").asText();
 
             log.info("Routing webhook action: {}", action);
-            log.info("Raw body: {}", rawBody);
+            // Body contains the session token - keep at debug level
+            log.debug("Raw body: {}", rawBody);
 
             switch (action) {
                 case "init":

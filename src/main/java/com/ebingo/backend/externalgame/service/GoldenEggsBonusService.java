@@ -8,6 +8,7 @@ import com.ebingo.backend.externalgame.repository.GoldenEggsBonusRepository;
 import com.ebingo.backend.externalgame.repository.GoldenEggsBonusTransactionRepository;
 import com.ebingo.backend.externalgame.util.GoldenEggsBonusUtil;
 import com.ebingo.backend.payment.repository.WalletRepository;
+import com.ebingo.backend.user.repository.UserProfileRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +30,7 @@ public class GoldenEggsBonusService {
     private final GoldenEggsBonusTransactionRepository transactionRepository;
     private final ExternalGameWalletService walletService;
     private final WalletRepository walletRepository;
+    private final UserProfileRepository userProfileRepository;
     private final GoldenEggsConfig config;
     private final WebClient goldenEggsWebClient;
     private final ObjectMapper objectMapper;
@@ -50,28 +52,36 @@ public class GoldenEggsBonusService {
         log.info("Creating bonus: bonusId={}, userId={}, subOperatorId={}", 
                 request.getBonusId(), request.getUserId(), subOperatorId);
 
-        // Step 1: Save bonus to local database with PENDING status
-        GoldenEggsBonus bonus = GoldenEggsBonus.builder()
-                .bonusId(request.getBonusId())
-                .userId(Long.parseLong(request.getUserId()))
-                .subOperatorId(subOperatorId)
-                .gameModes(serializeGameModes(request.getGameModes()))
-                .currency(request.getCurrency())
-                .type(request.getType())
-                .status("PENDING") // Start with PENDING status
-                .bonusQuantity(Integer.parseInt(request.getFreebetConfig().getCount()))
-                .bonusAvailable(Integer.parseInt(request.getFreebetConfig().getCount()))
-                .winSum(BigDecimal.ZERO)
-                .freebetConfig(serializeFreebetConfig(request.getFreebetConfig()))
-                .expiresAt(request.getExpiresAt())
-                .createdAt(Instant.now())
-                .updatedAt(Instant.now())
-                .build();
+        Long userId = Long.parseLong(request.getUserId());
 
-        return bonusRepository.save(bonus)
+        // Step 1: Load user (for agentId + FK validity) then save bonus locally with PENDING status
+        return userProfileRepository.findById(userId)
+                .flatMap(user -> {
+                    GoldenEggsBonus bonus = GoldenEggsBonus.builder()
+                            .bonusId(request.getBonusId())
+                            .userId(userId)
+                            .agentId(user.getAgentId())
+                            .subOperatorId(subOperatorId)
+                            .gameModes(serializeGameModes(request.getGameModes()))
+                            .currency(request.getCurrency())
+                            .type(request.getType())
+                            .status("PENDING") // Start with PENDING status
+                            .bonusQuantity(Integer.parseInt(request.getFreebetConfig().getCount()))
+                            .bonusAvailable(Integer.parseInt(request.getFreebetConfig().getCount()))
+                            .winSum(BigDecimal.ZERO)
+                            .freebetConfig(serializeFreebetConfig(request.getFreebetConfig()))
+                            .expiresAt(request.getExpiresAt())
+                            .createdAt(Instant.now())
+                            .updatedAt(Instant.now())
+                            .build();
+
+                    return bonusRepository.save(bonus);
+                })
                 .flatMap(savedBonus -> {
                     log.info("Bonus saved locally with PENDING status: bonusId={}", request.getBonusId());
-                    
+                    // Mark as persisted so subsequent saves issue UPDATE not INSERT
+                    savedBonus.setNew(false);
+
                     // Step 2: Call provider API to create bonus
                     return goldenEggsWebClient.post()
                             .uri("/api/operator/v1/bonuses/" + subOperatorId)
@@ -176,20 +186,27 @@ public class GoldenEggsBonusService {
 
         log.info("Cancelling bonus: bonusId={}, subOperatorId={}", bonusId, subOperatorId);
 
-        return bonusRepository.findByBonusIdAndSubOperatorId(bonusId, subOperatorId)
-                .flatMap(bonus -> {
-                    bonus.setStatus("CANCELLED");
-                    bonus.setUpdatedAt(Instant.now());
-                    return bonusRepository.save(bonus);
+        // Call provider first - only mark CANCELLED locally after provider confirms,
+        // otherwise a failed provider call would leave local state inconsistent
+        return goldenEggsWebClient.delete()
+                .uri("/api/operator/v1/bonuses/" + subOperatorId + "/" + bonusId)
+                .header("X-REQUEST-SIGN", signature)
+                .retrieve()
+                .bodyToMono(CancelBonusResponse.class)
+                .flatMap(response -> {
+                    if (response.getStatus() != null && response.getStatus()) {
+                        return bonusRepository.findByBonusIdAndSubOperatorId(bonusId, subOperatorId)
+                                .flatMap(bonus -> {
+                                    bonus.setStatus("CANCELLED");
+                                    bonus.setUpdatedAt(Instant.now());
+                                    bonus.setNew(false); // loaded entity - UPDATE not INSERT
+                                    return bonusRepository.save(bonus);
+                                })
+                                .thenReturn(response);
+                    }
+                    return Mono.just(response);
                 })
-                .flatMap(updatedBonus -> {
-                    return goldenEggsWebClient.delete()
-                            .uri("/api/operator/v1/bonuses/" + subOperatorId + "/" + bonusId)
-                            .header("X-REQUEST-SIGN", signature)
-                            .retrieve()
-                            .bodyToMono(CancelBonusResponse.class)
-                            .doOnSuccess(response -> log.info("Bonus cancelled: bonusId={}", bonusId));
-                })
+                .doOnSuccess(response -> log.info("Bonus cancelled: bonusId={}", bonusId))
                 .onErrorResume(e -> {
                     log.error("Error cancelling bonus", e);
                     return Mono.just(CancelBonusResponse.builder().status(false).build());
@@ -216,63 +233,79 @@ public class GoldenEggsBonusService {
                                     .code("OK")
                                     .balance(wallet.getTotalAvailableBalance().toString())
                                     .hideFromStat(true)
-                                    .build());
+                                    .build())
+                            // Wallet missing must NOT fall through to the new-transaction branch
+                            .switchIfEmpty(Mono.just(BonusWebhookResponse.builder()
+                                    .code("ACCOUNT_INVALID")
+                                    .balance("0")
+                                    .build()));
                 })
-                .switchIfEmpty(Mono.defer(() -> {
-                    // Create transaction record
-                    GoldenEggsBonusTransaction txn = GoldenEggsBonusTransaction.builder()
-                            .id(UUID.randomUUID())
-                            .bonusId(bonusId)
-                            .transactionId(transactionId)
-                            .userId(userId)
-                            .action("bonus-complete")
-                            .currency(request.getData().getCurrency())
-                            .winSum(winSum)
-                            .gameMode(request.getGameMode())
-                            .status("PENDING")
-                            .createdAt(Instant.now())
-                            .build();
+                .switchIfEmpty(Mono.defer(() ->
+                        // Load user for agentId (multi-tenancy) and FK validity
+                        userProfileRepository.findById(userId)
+                                .flatMap(user -> {
+                                    // Create transaction record
+                                    GoldenEggsBonusTransaction txn = GoldenEggsBonusTransaction.builder()
+                                            .id(UUID.randomUUID())
+                                            .bonusId(bonusId)
+                                            .transactionId(transactionId)
+                                            .userId(userId)
+                                            .agentId(user.getAgentId())
+                                            .action("bonus-complete")
+                                            .currency(request.getData().getCurrency())
+                                            .winSum(winSum)
+                                            .gameMode(request.getGameMode())
+                                            .status("PENDING")
+                                            .createdAt(Instant.now())
+                                            .build();
 
-                    return transactionRepository.save(txn)
-                            .flatMap(savedTxn -> {
-                                // Credit wallet with winSum (includes bet amount per spec)
-                                return walletService.creditExternalGame(
-                                        userId,
-                                        winSum,
-                                        request.getData().getCurrency(),
-                                        transactionId,
-                                        bonusId,
-                                        null // gameId not applicable for bonus
-                                ).flatMap(walletResult -> {
-                                    if (walletResult.isSuccess()) {
-                                        savedTxn.setStatus("SUCCESS");
-                                        return transactionRepository.save(savedTxn)
-                                                .flatMap(updated -> {
-                                                    // Update bonus status
-                                                    return bonusRepository.findById(bonusId)
-                                                            .flatMap(bonus -> {
-                                                                bonus.setStatus("COMPLETED");
-                                                                bonus.setWinSum(winSum);
-                                                                bonus.setUpdatedAt(Instant.now());
-                                                                return bonusRepository.save(bonus);
-                                                            })
-                                                            .thenReturn(BonusWebhookResponse.builder()
-                                                                    .code("OK")
-                                                                    .balance(walletResult.getBalance().toString())
-                                                                    .hideFromStat(true)
-                                                                    .build());
+                                    return transactionRepository.save(txn)
+                                            .flatMap(savedTxn -> {
+                                                savedTxn.setNew(false); // persisted - subsequent saves are UPDATEs
+                                                // Credit wallet with winSum (includes bet amount per spec)
+                                                return walletService.creditExternalGame(
+                                                        userId,
+                                                        winSum,
+                                                        request.getData().getCurrency(),
+                                                        transactionId,
+                                                        bonusId,
+                                                        null // gameId not applicable for bonus
+                                                ).flatMap(walletResult -> {
+                                                    if (walletResult.isSuccess()) {
+                                                        savedTxn.setStatus("SUCCESS");
+                                                        return transactionRepository.save(savedTxn)
+                                                                .flatMap(updated -> {
+                                                                    // Update bonus status
+                                                                    return bonusRepository.findById(bonusId)
+                                                                            .flatMap(bonus -> {
+                                                                                bonus.setStatus("COMPLETED");
+                                                                                bonus.setWinSum(winSum);
+                                                                                bonus.setUpdatedAt(Instant.now());
+                                                                                bonus.setNew(false); // loaded entity - UPDATE not INSERT
+                                                                                return bonusRepository.save(bonus);
+                                                                            })
+                                                                            .thenReturn(BonusWebhookResponse.builder()
+                                                                                    .code("OK")
+                                                                                    .balance(walletResult.getBalance().toString())
+                                                                                    .hideFromStat(true)
+                                                                                    .build());
+                                                                });
+                                                    } else {
+                                                        savedTxn.setStatus("FAILED");
+                                                        return transactionRepository.save(savedTxn)
+                                                                .thenReturn(BonusWebhookResponse.builder()
+                                                                        .code("ERROR")
+                                                                        .balance("0")
+                                                                        .build());
+                                                    }
                                                 });
-                                    } else {
-                                        savedTxn.setStatus("FAILED");
-                                        return transactionRepository.save(savedTxn)
-                                                .thenReturn(BonusWebhookResponse.builder()
-                                                        .code("ERROR")
-                                                        .balance("0")
-                                                        .build());
-                                    }
-                                });
-                            });
-                }));
+                                            });
+                                })
+                                .switchIfEmpty(Mono.just(BonusWebhookResponse.builder()
+                                        .code("ACCOUNT_INVALID")
+                                        .balance("0")
+                                        .build()))
+                ));
     }
 
     /**
@@ -294,40 +327,55 @@ public class GoldenEggsBonusService {
                                     .code("OK")
                                     .balance(wallet.getTotalAvailableBalance().toString())
                                     .hideFromStat(true)
-                                    .build());
+                                    .build())
+                            // Wallet missing must NOT fall through to the new-transaction branch
+                            .switchIfEmpty(Mono.just(BonusWebhookResponse.builder()
+                                    .code("ACCOUNT_INVALID")
+                                    .balance("0")
+                                    .build()));
                 })
-                .switchIfEmpty(Mono.defer(() -> {
-                    // Create transaction record
-                    GoldenEggsBonusTransaction txn = GoldenEggsBonusTransaction.builder()
-                            .id(UUID.randomUUID())
-                            .bonusId(bonusId)
-                            .transactionId(transactionId)
-                            .userId(userId)
-                            .action("bonus-expired-when-active")
-                            .currency(request.getData().getCurrency())
-                            .winSum(BigDecimal.ZERO)
-                            .gameMode(request.getGameMode())
-                            .status("SUCCESS")
-                            .createdAt(Instant.now())
-                            .build();
+                .switchIfEmpty(Mono.defer(() ->
+                        // Load user for agentId (multi-tenancy) and FK validity
+                        userProfileRepository.findById(userId)
+                                .flatMap(user -> {
+                                    // Create transaction record
+                                    GoldenEggsBonusTransaction txn = GoldenEggsBonusTransaction.builder()
+                                            .id(UUID.randomUUID())
+                                            .bonusId(bonusId)
+                                            .transactionId(transactionId)
+                                            .userId(userId)
+                                            .agentId(user.getAgentId())
+                                            .action("bonus-expired-when-active")
+                                            .currency(request.getData().getCurrency())
+                                            .winSum(BigDecimal.ZERO)
+                                            .gameMode(request.getGameMode())
+                                            .status("SUCCESS")
+                                            .createdAt(Instant.now())
+                                            .build();
 
-                    return transactionRepository.save(txn)
-                            .flatMap(savedTxn -> {
-                                // Update bonus status
-                                return bonusRepository.findById(bonusId)
-                                        .flatMap(bonus -> {
-                                            bonus.setStatus("EXPIRED_WHEN_ACTIVE");
-                                            bonus.setUpdatedAt(Instant.now());
-                                            return bonusRepository.save(bonus);
-                                        })
-                                        .then(walletRepository.findByUserProfileId(userId))
-                                        .map(wallet -> (BonusWebhookResponse) BonusWebhookResponse.builder()
-                                                .code("OK")
-                                                .balance(wallet.getTotalAvailableBalance().toString())
-                                                .hideFromStat(true)
-                                                .build());
-                            });
-                }));
+                                    return transactionRepository.save(txn)
+                                            .flatMap(savedTxn -> {
+                                                // Update bonus status
+                                                return bonusRepository.findById(bonusId)
+                                                        .flatMap(bonus -> {
+                                                            bonus.setStatus("EXPIRED_WHEN_ACTIVE");
+                                                            bonus.setUpdatedAt(Instant.now());
+                                                            bonus.setNew(false); // loaded entity - UPDATE not INSERT
+                                                            return bonusRepository.save(bonus);
+                                                        })
+                                                        .then(walletRepository.findByUserProfileId(userId))
+                                                        .map(wallet -> (BonusWebhookResponse) BonusWebhookResponse.builder()
+                                                                .code("OK")
+                                                                .balance(wallet.getTotalAvailableBalance().toString())
+                                                                .hideFromStat(true)
+                                                                .build());
+                                            });
+                                })
+                                .switchIfEmpty(Mono.just(BonusWebhookResponse.builder()
+                                        .code("ACCOUNT_INVALID")
+                                        .balance("0")
+                                        .build()))
+                ));
     }
 
     private String serializeGameModes(java.util.List<String> gameModes) {

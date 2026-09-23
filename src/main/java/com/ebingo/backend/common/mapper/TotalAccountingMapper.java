@@ -30,7 +30,6 @@ public final class TotalAccountingMapper {
                 .lastSettledAt(entity.getLastSettledAt())
                 .lastSettledAmount(entity.getLastSettledAmount())
                 .totalSettledAmount(entity.getTotalSettledAmount())
-                .nextSettlementTime(entity.getNextSettlementTime())
                 .createdAt(entity.getCreatedAt())
                 .updatedAt(entity.getUpdatedAt())
                 .build();
@@ -76,9 +75,6 @@ public final class TotalAccountingMapper {
         }
         if (updateDto.getLastSettledAt() != null) {
             existingEntity.setLastSettledAt(updateDto.getLastSettledAt());
-        }
-        if (updateDto.getNextSettlementTime() != null) {
-            existingEntity.setNextSettlementTime(updateDto.getNextSettlementTime());
         }
 
         return existingEntity;

@@ -69,6 +69,43 @@ public class AgentGameSettingController {
                 });
     }
 
+    @GetMapping("/{agentId}")
+    @Operation(
+            summary = "Get agent game modes (path variant)",
+            description = "Retrieve the list of enabled game modes for a specific agent"
+    )
+    public Mono<ResponseEntity<ApiResponse<AgentGameSettingDto>>> getAgentGameModesByPath(
+            @Parameter(description = "Agent ID", required = true)
+            @PathVariable Long agentId,
+            ServerWebExchange exchange
+    ) {
+        log.info("GET request to fetch game modes for agent (path): {}", agentId);
+
+        return settingService.getAgentGameModes(agentId)
+                .map(dto -> ResponseEntity.ok(
+                        ApiResponse.<AgentGameSettingDto>builder()
+                                .statusCode(HttpStatus.OK.value())
+                                .success(true)
+                                .message("Agent game modes retrieved successfully")
+                                .data(dto)
+                                .path(exchange.getRequest().getPath().value())
+                                .timestamp(Instant.now())
+                                .build()
+                ))
+                .onErrorResume(e -> {
+                    log.error("Error fetching game modes for agent {}: {}", agentId, e.getMessage());
+                    return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+                            ApiResponse.<AgentGameSettingDto>builder()
+                                    .statusCode(HttpStatus.INTERNAL_SERVER_ERROR.value())
+                                    .success(false)
+                                    .message("Failed to retrieve agent game modes: " + e.getMessage())
+                                    .path(exchange.getRequest().getPath().value())
+                                    .timestamp(Instant.now())
+                                    .build()
+                    ));
+                });
+    }
+
     @PutMapping
     @Operation(
             summary = "Update agent game modes",

@@ -11,11 +11,11 @@ import com.ebingo.backend.system.exceptions.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 
 @Service
 @RequiredArgsConstructor
@@ -24,6 +24,7 @@ public class DailyAccountingServiceImpl implements DailyAccountingService {
 
     private final DailyAgentAccountingRepository repository;
     private final TotalAgentAccountingRepository totalAccountingRepository;
+    private final TransactionalOperator transactionalOperator;
 
     @Override
     public Mono<DailyAccountingDto> getById(Long id) {
@@ -71,21 +72,25 @@ public class DailyAccountingServiceImpl implements DailyAccountingService {
     public Mono<PageResponse<DailyAccountingDto>> getByAgentIdAndDateRange(
             Long agentId, LocalDate startDate, LocalDate endDate, int page, int size) {
 
-        // Validate dates are not in the future
-        LocalDate today = LocalDate.now();
-        if (startDate.isAfter(today)) {
-            return Mono.error(new BadRequestException("Start date cannot be in the future"));
-        }
-        if (endDate.isAfter(today)) {
-            return Mono.error(new BadRequestException("End date cannot be in the future"));
-        }
         if (startDate.isAfter(endDate)) {
             return Mono.error(new BadRequestException("Start date cannot be after end date"));
         }
 
         long offset = (long) page * size;
 
-        return repository.countByAgentIdAndDateRange(agentId, startDate, endDate)
+        // Use the DB's current date so validation matches the timezone used
+        // for accounting_date in the upserts
+        return repository.getCurrentDate()
+                .flatMap(today -> {
+                    if (startDate.isAfter(today)) {
+                        return Mono.error(new BadRequestException("Start date cannot be in the future"));
+                    }
+                    if (endDate.isAfter(today)) {
+                        return Mono.error(new BadRequestException("End date cannot be in the future"));
+                    }
+                    return Mono.just(today);
+                })
+                .flatMap(today -> repository.countByAgentIdAndDateRange(agentId, startDate, endDate))
                 .flatMap(totalElements ->
                         repository.findByAgentIdAndDateRangePaged(agentId, startDate, endDate, size, offset)
                                 .map(DailyAccountingMapper::toDto)
@@ -104,12 +109,11 @@ public class DailyAccountingServiceImpl implements DailyAccountingService {
 
     @Override
     public Mono<PageResponse<DailyAccountingDto>> getTodayRecordsForAllAgents(int page, int size) {
-        LocalDate today = LocalDate.now();
         long offset = (long) page * size;
 
-        return repository.countByAccountingDate(today)
+        return repository.countToday()
                 .flatMap(totalElements ->
-                        repository.findByAccountingDatePaged(today, size, offset)
+                        repository.findTodayPaged(size, offset)
                                 .map(DailyAccountingMapper::toDto)
                                 .collectList()
                                 .map(content -> new PageResponse<>(content, page, size, totalElements))
@@ -123,58 +127,36 @@ public class DailyAccountingServiceImpl implements DailyAccountingService {
 
     @Override
     public Mono<DailyAccountingDto> settleById(Long id) {
-        LocalDate today = LocalDate.now();
-
         return repository.findById(id)
                 .switchIfEmpty(Mono.error(
                         new ResourceNotFoundException("Daily accounting not found with ID: " + id)))
                 .flatMap(dailyAccounting -> {
-                    // Validate that the record is not from today
-                    if (dailyAccounting.getAccountingDate().equals(today)) {
-                        return Mono.error(new BadRequestException(
-                                "Cannot settle today's accounting record. Settlement is only allowed for past records."));
-                    }
-
-                    // Check if already settled
+                    // Check if already settled (atomic UPDATE below also guards against races)
                     if (dailyAccounting.getSettledAt() != null) {
                         return Mono.error(new BadRequestException(
                                 "This accounting record has already been settled at: " + dailyAccounting.getSettledAt()));
                     }
 
-                    // Get the net income to settle
-                    BigDecimal settledAmount = dailyAccounting.getNetIncome() != null 
-                            ? dailyAccounting.getNetIncome() 
-                            : BigDecimal.ZERO;
+                    // Atomically mark settled — returns empty if another request settled it
+                    // concurrently or if the record is from today (DB-side CURRENT_DATE)
+                    return repository.applySettlement(id)
+                            .switchIfEmpty(Mono.error(new BadRequestException(
+                                    "Cannot settle this record: it is already settled or belongs to today.")))
+                            .flatMap(settledDaily -> {
+                                BigDecimal settledAmount = settledDaily.getNetIncome() != null
+                                        ? settledDaily.getNetIncome()
+                                        : BigDecimal.ZERO;
 
-                    // Set settlement timestamp
-                    dailyAccounting.setSettledAt(LocalDateTime.now());
-
-                    // Save daily accounting and update total accounting
-                    return repository.save(dailyAccounting)
-                            .flatMap(savedDaily -> 
-                                    // Update TotalAgentAccounting
-                                    totalAccountingRepository.findByAgentId(savedDaily.getAgentId())
-                                            .switchIfEmpty(Mono.error(
-                                                    new ResourceNotFoundException(
-                                                            "Total accounting not found for agent ID: " + savedDaily.getAgentId())))
-                                            .flatMap(totalAccounting -> {
-                                                // Update lastSettledAmount
-                                                totalAccounting.setLastSettledAmount(settledAmount);
-                                                
-                                                // Add to totalSettledAmount
-                                                BigDecimal currentTotal = totalAccounting.getTotalSettledAmount() != null 
-                                                        ? totalAccounting.getTotalSettledAmount() 
-                                                        : BigDecimal.ZERO;
-                                                totalAccounting.setTotalSettledAmount(currentTotal.add(settledAmount));
-                                                
-                                                // Update lastSettledAt
-                                                totalAccounting.setLastSettledAt(LocalDateTime.now());
-                                                
-                                                return totalAccountingRepository.save(totalAccounting);
-                                            })
-                                            .thenReturn(savedDaily)
-                            );
+                                // Atomically accumulate into the agent's total accounting
+                                return totalAccountingRepository.applySettlement(settledDaily.getAgentId(), settledAmount)
+                                        .switchIfEmpty(Mono.error(
+                                                new ResourceNotFoundException(
+                                                        "Total accounting not found for agent ID: " + settledDaily.getAgentId())))
+                                        .thenReturn(settledDaily);
+                            });
                 })
+                // Daily settle + total accumulation commit or roll back together
+                .as(transactionalOperator::transactional)
                 .map(DailyAccountingMapper::toDto)
                 .doOnSubscribe(s -> log.info("Settling daily accounting with ID: {}", id))
                 .doOnSuccess(dto -> log.info("Settled daily accounting with ID: {} at {} with amount: {}", 
@@ -184,13 +166,11 @@ public class DailyAccountingServiceImpl implements DailyAccountingService {
 
     @Override
     public Mono<DailyAccountingDto> getTodayRecordForAgent(Long agentId) {
-        LocalDate today = LocalDate.now();
-
-        return repository.findByAgentIdAndAccountingDate(agentId, today)
+        return repository.findTodayByAgentId(agentId)
                 .map(DailyAccountingMapper::toDto)
                 .switchIfEmpty(Mono.error(
                         new ResourceNotFoundException(
-                                "No daily accounting record found for agent ID: " + agentId + " on date: " + today)))
+                                "No daily accounting record found for agent ID: " + agentId + " for today")))
                 .doOnSubscribe(s -> log.info("Fetching today's daily accounting record for agent: {}", agentId))
                 .doOnSuccess(dto -> log.info("Fetched today's daily accounting record for agent: {}", agentId))
                 .doOnError(e -> log.error("Failed to fetch today's daily accounting record for agent: {}", agentId, e));
