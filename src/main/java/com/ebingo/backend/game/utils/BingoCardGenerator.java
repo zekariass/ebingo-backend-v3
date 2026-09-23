@@ -1,6 +1,7 @@
 package com.ebingo.backend.game.utils;
 
 import com.ebingo.backend.game.enums.BingoColumn;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -9,6 +10,7 @@ import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
+@Slf4j
 public class BingoCardGenerator {
 
     /**
@@ -18,7 +20,7 @@ public class BingoCardGenerator {
      * @return List of Bingo cards, each represented as a Map<Column, List<Integer>>
      */
     public static List<Map<BingoColumn, List<Integer>>> generateCardPool(int poolSize) {
-        System.out.println("============BingoCardGenerator========================>>> CAPACITY RECEIVED" + poolSize);
+        log.debug("BingoCardGenerator: generating card pool with capacity {}", poolSize);
         List<Map<BingoColumn, List<Integer>>> pool = new ArrayList<>(poolSize);
 
         for (int i = 0; i < poolSize; i++) {
@@ -61,7 +63,6 @@ public class BingoCardGenerator {
                 .distinct()
                 .limit(count)
                 .boxed()
-//                .sorted()
                 .collect(Collectors.toList());
     }
 }
