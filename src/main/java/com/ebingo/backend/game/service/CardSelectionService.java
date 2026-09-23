@@ -7,6 +7,7 @@ import io.lettuce.core.RedisConnectionException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.client.RedisTimeoutException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
@@ -25,6 +26,9 @@ public class CardSelectionService {
     private final RedisPublisher publisher;
     private final CardPoolService cardPoolService;
     private final PlayerStateService playerStateService;
+
+    @Value("${cardsel.owner-checked-locks:false}")
+    private boolean ownerCheckedLocks;
 
 
     private static final String CLAIM_SCRIPT =
@@ -89,6 +93,78 @@ public class CardSelectionService {
 
     private static final RedisScript<String> CLAIM_SCRIPT_OBJ = RedisScript.of(CLAIM_SCRIPT, String.class);
 
+    /**
+     * Same as CLAIM_SCRIPT but every lock DEL is guarded by a token compare
+     * (only delete the lock if we still own it).
+     */
+    private static final String CLAIM_SCRIPT_SAFE =
+            "local ownerKey = KEYS[1]\n" +
+                    "local playerSelectedCardsKey = KEYS[2]\n" +
+                    "local allPlayersSelectedCardsKey = KEYS[3]\n" +
+                    "local cardLockKey = KEYS[4]\n" +
+                    "local userLockKey = KEYS[5]\n" +
+                    "\n" +
+                    "local cardId = ARGV[1]\n" +
+                    "local userId = ARGV[2]\n" +
+                    "local maxPerUser = tonumber(ARGV[3])\n" +
+                    "local lockTtl = tonumber(ARGV[4])\n" +
+                    "local ownerTtl = tonumber(ARGV[5])\n" +
+                    "\n" +
+                    "local function releaseLock(key)\n" +
+                    "    if redis.call('get', key) == userId then\n" +
+                    "        redis.call('del', key)\n" +
+                    "    end\n" +
+                    "end\n" +
+                    "\n" +
+                    "-- Acquire or refresh card-level lock\n" +
+                    "local cardLockAcquired = redis.call('set', cardLockKey, userId, 'NX', 'EX', lockTtl)\n" +
+                    "if not cardLockAcquired then\n" +
+                    "    local currentLocker = redis.call('get', cardLockKey)\n" +
+                    "    if currentLocker ~= userId then\n" +
+                    "        return 'CARD_LOCKED'\n" +
+                    "    end\n" +
+                    "    redis.call('expire', cardLockKey, lockTtl)\n" +
+                    "end\n" +
+                    "\n" +
+                    "-- Check if card is already taken\n" +
+                    "if redis.call('exists', ownerKey) == 1 or redis.call('sismember', allPlayersSelectedCardsKey, cardId) == 1 then\n" +
+                    "    releaseLock(cardLockKey)\n" +
+                    "    releaseLock(userLockKey)\n" +
+                    "    return 'CARD_TAKEN'\n" +
+                    "end\n" +
+                    "\n" +
+                    "-- Acquire or refresh user-level lock\n" +
+                    "local userLockAcquired = redis.call('set', userLockKey, userId, 'NX', 'EX', lockTtl)\n" +
+                    "if not userLockAcquired then\n" +
+                    "    local currentUserLocker = redis.call('get', userLockKey)\n" +
+                    "    if currentUserLocker ~= userId then\n" +
+                    "        releaseLock(cardLockKey)\n" +
+                    "        return 'USER_BUSY'\n" +
+                    "    end\n" +
+                    "    redis.call('expire', userLockKey, lockTtl)\n" +
+                    "end\n" +
+                    "\n" +
+                    "-- Enforce per-user card limit\n" +
+                    "local count = redis.call('scard', playerSelectedCardsKey)\n" +
+                    "if tonumber(count) >= maxPerUser then\n" +
+                    "    releaseLock(cardLockKey)\n" +
+                    "    releaseLock(userLockKey)\n" +
+                    "    return 'USER_LIMIT'\n" +
+                    "end\n" +
+                    "\n" +
+                    "-- Claim the card atomically\n" +
+                    "redis.call('set', ownerKey, userId, 'EX', ownerTtl)\n" +
+                    "redis.call('sadd', playerSelectedCardsKey, cardId)\n" +
+                    "redis.call('sadd', allPlayersSelectedCardsKey, cardId)\n" +
+                    "\n" +
+                    "-- Cleanup locks\n" +
+                    "releaseLock(cardLockKey)\n" +
+                    "releaseLock(userLockKey)\n" +
+                    "\n" +
+                    "return 'OK';";
+
+    private static final RedisScript<String> CLAIM_SCRIPT_SAFE_OBJ = RedisScript.of(CLAIM_SCRIPT_SAFE, String.class);
+
     public Mono<String> claimCard(Long roomId, Long gameId, String userId, String cardId, int maxCardsPerPlayer) {
         if (cardId == null || userId == null || roomId == null) {
             log.info("Cannot claim card: missing required params userId={}, roomId={}, cardId={}", userId, roomId, cardId);
@@ -105,7 +181,7 @@ public class CardSelectionService {
         final int ownerTtlSeconds = 600;
 
         return redis.execute(
-                        CLAIM_SCRIPT_OBJ,
+                        ownerCheckedLocks ? CLAIM_SCRIPT_SAFE_OBJ : CLAIM_SCRIPT_OBJ,
                         List.of(ownerKey, playerSelectedCardsKey, allPlayersSelectedCardsKey, cardLockKey, userLockKey),
                         cardId, userId,
                         String.valueOf(maxCardsPerPlayer),
@@ -197,6 +273,82 @@ public class CardSelectionService {
 
     private static final RedisScript<String> RELEASE_SCRIPT_OBJ = RedisScript.of(RELEASE_SCRIPT, String.class);
 
+    /**
+     * Same as RELEASE_SCRIPT but every lock DEL is guarded by a token compare.
+     */
+    private static final String RELEASE_SCRIPT_SAFE =
+            "local ownerKey = KEYS[1]\n" +
+                    "local playerSelectedCardsKey = KEYS[2]\n" +
+                    "local allPlayersSelectedCardsKey = KEYS[3]\n" +
+                    "local cardLockKey = KEYS[4]\n" +
+                    "local userLockKey = KEYS[5]\n" +
+                    "\n" +
+                    "local cardId = ARGV[1]\n" +
+                    "local userId = ARGV[2]\n" +
+                    "local lockTtl = tonumber(ARGV[3])\n" +
+                    "\n" +
+                    "local function releaseLock(key)\n" +
+                    "    if redis.call('get', key) == userId then\n" +
+                    "        redis.call('del', key)\n" +
+                    "    end\n" +
+                    "end\n" +
+                    "\n" +
+                    "-- Acquire card lock\n" +
+                    "local cardLockAcquired = redis.call('set', cardLockKey, userId, 'NX', 'EX', lockTtl)\n" +
+                    "if not cardLockAcquired then\n" +
+                    "    local currentLocker = redis.call('get', cardLockKey)\n" +
+                    "    if currentLocker ~= userId then\n" +
+                    "        return 'CARD_LOCKED'\n" +
+                    "    end\n" +
+                    "    redis.call('expire', cardLockKey, lockTtl)\n" +
+                    "end\n" +
+                    "\n" +
+                    "-- Acquire user lock\n" +
+                    "local userLockAcquired = redis.call('set', userLockKey, userId, 'NX', 'EX', lockTtl)\n" +
+                    "if not userLockAcquired then\n" +
+                    "    local currentUser = redis.call('get', userLockKey)\n" +
+                    "    if currentUser ~= userId then\n" +
+                    "        releaseLock(cardLockKey)\n" +
+                    "        return 'USER_BUSY'\n" +
+                    "    end\n" +
+                    "    redis.call('expire', userLockKey, lockTtl)\n" +
+                    "end\n" +
+                    "\n" +
+                    "-- Check ownership\n" +
+                    "local owner = redis.call('get', ownerKey)\n" +
+                    "redis.call('srem', playerSelectedCardsKey, cardId)\n" +
+                    "redis.call('srem', allPlayersSelectedCardsKey, cardId)\n" +
+                    "if owner == nil then\n" +
+                    "    releaseLock(cardLockKey)\n" +
+                    "    releaseLock(userLockKey)\n" +
+                    "    return 'FORCED_RELEASE'\n" +
+                    "end\n" +
+                    "if owner ~= userId then\n" +
+                    "    releaseLock(cardLockKey)\n" +
+                    "    releaseLock(userLockKey)\n" +
+                    "    return 'NOT_OWNER'\n" +
+                    "end\n" +
+                    "\n" +
+                    "-- Normal release\n" +
+                    "redis.call('del', ownerKey)\n" +
+                    "releaseLock(cardLockKey)\n" +
+                    "releaseLock(userLockKey)\n" +
+                    "\n" +
+                    "return 'OK';";
+
+    private static final RedisScript<String> RELEASE_SCRIPT_SAFE_OBJ = RedisScript.of(RELEASE_SCRIPT_SAFE, String.class);
+
+    /**
+     * Compare-and-delete lock cleanup: only removes the lock if the stored
+     * value still matches the userId token.
+     */
+    private static final String SAFE_DEL_LOCK_SCRIPT =
+            "if redis.call('get', KEYS[1]) == ARGV[1] then redis.call('del', KEYS[1]) end\n" +
+                    "if redis.call('get', KEYS[2]) == ARGV[1] then redis.call('del', KEYS[2]) end\n" +
+                    "return 1;";
+
+    private static final RedisScript<Long> SAFE_DEL_LOCK_SCRIPT_OBJ = RedisScript.of(SAFE_DEL_LOCK_SCRIPT, Long.class);
+
     public Mono<String> releaseCard(Long roomId, Long gameId, String userId, String cardId) {
         if (cardId == null || userId == null || roomId == null) {
             log.info("Cannot release card: missing required params userId={}, roomId={}, cardId={}", userId, roomId, cardId);
@@ -212,7 +364,7 @@ public class CardSelectionService {
         final int lockTtlSeconds = 5;
 
         return redis.execute(
-                        RELEASE_SCRIPT_OBJ,
+                        ownerCheckedLocks ? RELEASE_SCRIPT_SAFE_OBJ : RELEASE_SCRIPT_OBJ,
                         List.of(ownerKey, playerSelectedCardsKey, allPlayersSelectedCardsKey, cardLockKey, userLockKey),
                         cardId, userId, String.valueOf(lockTtlSeconds)
                 )
@@ -298,6 +450,14 @@ public class CardSelectionService {
     private Mono<Void> cleanupLocks(Long gameId, String cardId, String userId) {
         String cardLockKey = RedisKeys.cardLockKey(gameId, cardId);
         String userLockKey = RedisKeys.userLockKey(gameId, userId);
+
+        if (ownerCheckedLocks) {
+            return redis.execute(SAFE_DEL_LOCK_SCRIPT_OBJ, List.of(cardLockKey, userLockKey), userId)
+                    .next()
+                    .doOnError(err -> log.warn("Failed to cleanup locks for user {} card {}: {}", userId, cardId, err.getMessage()))
+                    .onErrorResume(err -> Mono.empty())
+                    .then();
+        }
 
         return Mono.when(
                 redis.delete(cardLockKey)
