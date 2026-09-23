@@ -100,18 +100,6 @@ public class AutoPlayService {
         markingErrors = Counter.builder("autoplay.marking.errors").register(meterRegistry);
         bingoClaims = Counter.builder("autoplay.bingo.claims").register(meterRegistry);
 
-        // Keep your startup behavior (flush)
-        try {
-            redisTemplate.getConnectionFactory().getReactiveConnection()
-                    .serverCommands()
-                    .flushDb()
-                    .doOnSuccess(v -> log.info("Redis DB flushed on startup"))
-                    .doOnError(e -> log.warn("Failed to flush Redis on startup: {}", e.getMessage()))
-                    .block();
-        } catch (Exception e) {
-            log.warn("Exception flushing Redis on startup: {}", e.getMessage());
-        }
-
         // clear stale reservations
         roomService.getAllRoomsWIthCardPoolForAutoService()
                 .map(RoomMapper::toEntity)
