@@ -29,6 +29,10 @@ public class CacheKeyUtil {
         return "rooms:with-card-pool:all";
     }
 
+    public static String getRoomsWithCardPoolByAgentKey(Long agentId) {
+        return "rooms:with-card-pool:agent:" + agentId + ":all";
+    }
+
     public static String getSystemConfigByNameKey(String configName) {
         return "system:config:" + configName;
     }

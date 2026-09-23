@@ -63,10 +63,11 @@ public class RoomController {
     @Operation(summary = "Get room by ID", description = "Get room by ID")
     public Mono<ResponseEntity<ApiResponse<RoomWithCardPoolDto>>> getRoomById(
             @Parameter(required = true, description = "Room ID") @PathVariable Long id,
+            @Parameter(description = "Agent ID") @RequestParam(required = false) Long agentId,
 //            @RequestHeader(value = "x-init-data", required = true) String telegramInitData,
             ServerWebExchange exchange) {
 
-        return roomService.getRoomById(id)
+        return roomService.getRoomById(id, agentId)
                 .map(room -> ApiResponse.<RoomWithCardPoolDto>builder()
                         .statusCode(HttpStatus.OK.value())
                         .success(true)

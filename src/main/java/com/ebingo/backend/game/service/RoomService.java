@@ -9,6 +9,8 @@ public interface RoomService {
 
     Mono<RoomWithCardPoolDto> getRoomById(Long id);
 
+    Mono<RoomWithCardPoolDto> getRoomById(Long id, Long agentId);
+
     Mono<RoomInternalDto> getRoomWithCardPoolById(Long id);
 
     Flux<RoomDto> getAllRooms(Long agentId);

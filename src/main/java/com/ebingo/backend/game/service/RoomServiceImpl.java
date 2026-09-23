@@ -25,6 +25,7 @@ import reactor.core.scheduler.Schedulers;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -40,6 +41,9 @@ public class RoomServiceImpl implements RoomService {
 
     @Value("${telegram.bot.token}")
     private String botToken;
+
+    @Value("${security.room-ownership-check:false}")
+    private boolean roomOwnershipCheck;
 
     public RoomServiceImpl(RoomRepository roomRepository, ReactiveTransactionManager transactionManager, GameStateService gameStateService, UserProfileService userProfileRepository, CacheService cacheService, ObjectMapper objectMapper) {
         this.roomRepository = roomRepository;
@@ -91,8 +95,12 @@ public class RoomServiceImpl implements RoomService {
                                         return roomRepository.save(baseRoom)
                                                 .map(RoomMapper::toDto)
                                                 .flatMap(savedRoom ->
-                                                        cacheService.evict(cacheKey)
-                                                                .doOnNext(ev -> log.info("Cache evicted: {}", ev))
+                                                        Mono.when(
+                                                                        cacheService.evict(cacheKey),
+                                                                        cacheService.evict(CacheKeyUtil.getRoomsWithCardPoolByAgentKey(roomDto.getAgentId())),
+                                                                        cacheService.evict(CacheKeyUtil.getRoomsWithCardPoolKey())
+                                                                )
+                                                                .doOnSuccess(ev -> log.info("Room caches evicted after create"))
                                                                 .thenReturn(savedRoom)
                                                 )
                                                 .doOnSuccess(r -> log.info("Room created successfully: {}", r.getName()))
@@ -117,6 +125,18 @@ public class RoomServiceImpl implements RoomService {
                         .map(RoomMapper::toRoomWithCardPoolDto),
                 RoomWithCardPoolDto.class
         );
+    }
+
+
+    @Override
+    public Mono<RoomWithCardPoolDto> getRoomById(Long id, Long agentId) {
+        return getRoomById(id)
+                .flatMap(room -> {
+                    if (roomOwnershipCheck && agentId != null && !Objects.equals(room.getAgentId(), agentId)) {
+                        return Mono.error(new ResourceNotFoundException("Room not found with id: " + id));
+                    }
+                    return Mono.just(room);
+                });
     }
 
 
@@ -159,7 +179,7 @@ public class RoomServiceImpl implements RoomService {
     @Override
     public Flux<RoomInternalDto> getAllRoomsWIthCardPool(Long agentId) {
         log.info("Fetching all rooms with card pool");
-        String cacheKey = CacheKeyUtil.getRoomsWithCardPoolKey();
+        String cacheKey = CacheKeyUtil.getRoomsWithCardPoolByAgentKey(agentId);
 
         // Assign the repository query to a variable for readability
         Flux<RoomInternalDto> dbQuery = roomRepository.findByStatusAndAgentIdOrderByEntryFee(RoomStatus.OPEN, agentId)
@@ -189,6 +209,10 @@ public class RoomServiceImpl implements RoomService {
                 .switchIfEmpty(Mono.error(new ResourceNotFoundException("Room not found with id: " + id)))
                 .flatMap(existingRoom -> {
 
+                    if (roomOwnershipCheck && agentId != null && !Objects.equals(existingRoom.getAgentId(), agentId)) {
+                        return Mono.error(new ResourceNotFoundException("Room not found with id: " + id));
+                    }
+
                     int oldCapacity = existingRoom.getCapacity();
                     int newCapacity = roomDto.getCapacity();
 
@@ -202,8 +226,13 @@ public class RoomServiceImpl implements RoomService {
                             .flatMap(roomRepository::save);
                 })
                 .flatMap(savedRoom ->
-                        cacheService.evict(roomCacheKey)
-                                .then(cacheService.evict(allRoomsCacheKey))
+                        Mono.when(
+                                        cacheService.evict(roomCacheKey),
+                                        cacheService.evict(allRoomsCacheKey),
+                                        cacheService.evict(CacheKeyUtil.getRoomWithCardPoolKey(id)),
+                                        cacheService.evict(CacheKeyUtil.getRoomsWithCardPoolByAgentKey(agentId)),
+                                        cacheService.evict(CacheKeyUtil.getRoomsWithCardPoolKey())
+                                )
                                 .thenReturn(savedRoom)
                 )
                 .map(RoomMapper::toDto)
@@ -288,17 +317,33 @@ public class RoomServiceImpl implements RoomService {
                 .doOnError(e -> log.error("Error evicting cache for all rooms", e))
                 .then();
 
+        Mono<Void> evictCacheWithCardPool = Mono.when(
+                        cacheService.evict(CacheKeyUtil.getRoomWithCardPoolKey(id)),
+                        cacheService.evict(CacheKeyUtil.getRoomsWithCardPoolByAgentKey(agentId)),
+                        cacheService.evict(CacheKeyUtil.getRoomsWithCardPoolKey())
+                )
+                .doOnError(e -> log.error("Error evicting card-pool caches for room id={}", id, e))
+                .then();
+
         Mono<Void> deleteGameState = gameStateService.deleteGameState(id, agentId)
                 .doOnSuccess(deleted -> log.info("Deleted game state for roomId={} -> {}", id, deleted))
                 .doOnError(e -> log.error("Error deleting game state for roomId={}", id, e))
                 .then();
 
-        Mono<Void> deleteRoom = roomRepository.deleteById(id)
+        Mono<Void> deleteRoom = roomRepository.findById(id)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("Room not found with id: " + id)))
+                .flatMap(existingRoom -> {
+                    if (roomOwnershipCheck && agentId != null && !Objects.equals(existingRoom.getAgentId(), agentId)) {
+                        return Mono.error(new ResourceNotFoundException("Room not found with id: " + id));
+                    }
+                    return roomRepository.deleteById(id);
+                })
                 .doOnSuccess(v -> log.info("Deleted room with id={}", id))
-                .doOnError(e -> log.error("Error deleting room with id={}", id, e));
+                .doOnError(e -> log.error("Error deleting room with id={}", id, e))
+                .then();
 
         // Run all operations in parallel and wait for all to complete
-        return Mono.when(evictCache, evictCacheAll, deleteGameState, deleteRoom)
+        return Mono.when(evictCache, evictCacheAll, evictCacheWithCardPool, deleteGameState, deleteRoom)
                 .then();
     }
 
