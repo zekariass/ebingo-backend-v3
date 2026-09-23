@@ -56,7 +56,7 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class RedissonConfig {
 
-    @Value("${REDIS_HOST:redis-ebingo}") // default to Docker service name
+    @Value("${REDIS_HOST:localhost}") // matches application.yml spring.data.redis.host default
     private String redisHost;
 
     @Value("${REDIS_PORT:6379}") // default Redis port
