@@ -2,9 +2,9 @@ spring:
   application:
     name: ebingo-server-backend
   r2dbc:
-    url: ${EBINGO_DB_URL}
-    username: ${EBINGO_DB_USER}
-    password: ${EBINGO_DB_PASSWORD}
+    url: ${EBINGO_DB_URL:r2dbc:postgresql://localhost:5432/ebingo}
+    username: ${EBINGO_DB_USER:ebingo}
+    password: ${EBINGO_DB_PASSWORD:Zakinfo@23}
     pool: #NEWLY ADDED
       enabled: true
       initial-size: 5
@@ -15,9 +15,9 @@ spring:
       acquire-retry: 1
   flyway:
     enabled: ${FLYWAY_ENABLED:false}
-    url: ${EBINGO_DB_URL}
-    user: ${EBINGO_DB_USER}
-    password: ${EBINGO_DB_PASSWORD}
+    url: ${EBINGO_DB_URL:jdbc:postgresql://localhost:5432/ebingo}
+    user: ${EBINGO_DB_USER:ebingo}
+    password: ${EBINGO_DB_PASSWORD:Zakinfo@23}
   #  security:
   #    oauth2:
   #      resourceserver:
@@ -26,8 +26,8 @@ spring:
 
   data:
     redis:
-      host: ${REDIS_HOST}
-      port: ${REDIS_PORT}
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
       # General connection timeout
       timeout: 5s
 
@@ -60,7 +60,7 @@ management:
 
 
 endpoints:
-  access-token: ${ENDPOINTS_ACCESS_TOKEN}
+  access-token: ${ENDPOINTS_ACCESS_TOKEN:}
 
 
 springdoc:
@@ -90,13 +90,13 @@ app:
       - https://ebingo-client-v3.vercel.app
 
 addis-pay:
-  api-key: ${ADDISPAY_API_KEY}
-  base-url: ${ADDISPAY_BASE_URL}
-  webhook-hash: ${WEBHOOK_HASH}
-  redirect-url: ${ADDISPAY_REDIRECT_URL}
-  success-url: ${ADDISPAY_SUCCESS_URL}
-  error-url: ${ADDISPAY_ERROR_URL}
-  cancel-url: ${ADDISPAY_CANCEL_URL}
+  api-key: ${ADDISPAY_API_KEY:}
+  base-url: ${ADDISPAY_BASE_URL:}
+  webhook-hash: ${WEBHOOK_HASH:}
+  redirect-url: ${ADDISPAY_REDIRECT_URL:}
+  success-url: ${ADDISPAY_SUCCESS_URL:}
+  error-url: ${ADDISPAY_ERROR_URL:}
+  cancel-url: ${ADDISPAY_CANCEL_URL:}
 
 #Number of minutes before a game is considered stale if status is PLAYING, COMPLETED, or COUNTDOWN
 game:
