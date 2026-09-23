@@ -23,15 +23,4 @@ public class AutoPlayScheduleConfig {
         autoPlayManager.enable("Scheduled: 03:00").subscribe();
     }
 
-//    @Bean
-//    public BingoCardGenerator bingoCardGenerator() {
-//        List<CardInfo> cards = BingoCardGenerator.generateCardPool(500)
-//                .stream()
-//                .map(card -> new CardInfo(UUID.randomUUID().toString(), card, new HashSet<>()))
-//                .toList();
-//        System.out.println("============BingoCardGenerator========================>>> CAPACITY RECEIVED:   " + cards);
-//
-//
-//        return null;
-//    }
 }

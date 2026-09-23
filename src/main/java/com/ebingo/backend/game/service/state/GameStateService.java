@@ -144,7 +144,7 @@ public class GameStateService {
                                                         l -> l.unlock().onErrorResume(e -> Mono.empty())
                                                 );
                                             } else {
-                                                log.debug("Game init lock busy for room {} — will retry shortly", roomId);
+                                                log.debug("Game init lock busy for room {} â€” will retry shortly", roomId);
                                                 return Mono.error(new IllegalStateException("LOCK_BUSY"));
                                             }
                                         })
@@ -214,25 +214,6 @@ public class GameStateService {
 
         gameState.setAgentId(agentId);
 
-//        return Mono.zip(
-//                systemConfigService.getSystemConfig("COMMISSION_RATE"),
-//                roomRepository.findById(roomId)
-//        ).flatMap(tuple -> {
-//            var commissionConfig = tuple.getT1();
-//            log.info("TotalCommission rate: {}", commissionConfig);
-//            log.info("ROOM: {}", tuple.getT2());
-//            gameState.setCommissionRate(
-//                    Double.parseDouble(commissionConfig.getValue())
-//            );
-//            gameState.setEntryFee(tuple.getT2().getEntryFee().doubleValue());
-//            gameState.setCapacity(tuple.getT2().getCapacity());
-//
-//            // Add room to room registry for sync
-//            // Add room to room registry for sync, reactive chaining
-//            log.info("Adding room {} to room registry. rooms in registry: {}", roomId, roomRegistry.getActiveRooms());
-//            return roomRegistry.addRoom(roomId)
-//                    .thenReturn(gameState);
-//        });
 
         return roomRepository.findById(roomId)
                 .flatMap(room -> {

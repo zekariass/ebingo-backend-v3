@@ -176,35 +176,6 @@ public class RoomServiceImpl implements RoomService {
     }
 
 
-//    @Override
-//    public Mono<RoomDto> updateRoomById(Long id, RoomUpdateDto roomDto) {
-//        log.info("Updating room by id: {}", id);
-//
-//        String roomCacheKey = CacheKeyUtil.getRoomKey(id);
-//        String allRoomsCacheKey = CacheKeyUtil.getRoomsKey();
-//
-//        Mono<Void> evictAllRoomsCache = cacheService.evict(allRoomsCacheKey)
-//                .doOnNext(evicted -> log.info("Cache evicted for all rooms: {}", evicted))
-//                .doOnError(e -> log.error("Error evicting cache for all rooms", e))
-//                .then();
-//
-//        return roomRepository.findById(id)
-//                .switchIfEmpty(Mono.error(new ResourceNotFoundException("Room not found with id: " + id)))
-//                .flatMap(existingRoom -> {
-//                    RoomMapper.toEntity(roomDto, existingRoom); // mutate fields
-//                    return roomRepository.save(existingRoom);
-//                })
-//                .flatMap(savedRoom ->
-//                        cacheService.evict(roomCacheKey)
-//                                .doOnNext(evicted -> log.info("Cache evicted for room id {}: {}", id, evicted))
-//                                .doOnError(e -> log.error("Error evicting cache for room id={}", id, e))
-//                                .then(evictAllRoomsCache)
-//                                .thenReturn(savedRoom)
-//                )
-//                .map(RoomMapper::toDto)
-//                .doOnSuccess(r -> log.info("Updated room successfully: {}", r.getName()))
-//                .onErrorMap(e -> new RuntimeException("Error updating room with id: " + id, e));
-//    }
 
 
     @Override
@@ -248,7 +219,7 @@ public class RoomServiceImpl implements RoomService {
 
         boolean missing = (room.getAllCardIdsJson() == null || room.getAllCardIdsJson().isBlank());
 
-        // CASE 1: No existing IDs → generate fresh pool
+        // CASE 1: No existing IDs â†’ generate fresh pool
         if (missing) {
             cardPool = BingoCardGenerator.generateCardPool(newCapacity)
                     .stream()
@@ -270,7 +241,7 @@ public class RoomServiceImpl implements RoomService {
 
         int diff = newCapacity - oldCapacity;
 
-        // CASE 2: Increase capacity → append new cards
+        // CASE 2: Increase capacity â†’ append new cards
         if (diff > 0) {
             List<CardInfo> newCards = BingoCardGenerator.generateCardPool(diff)
                     .stream()
@@ -281,7 +252,7 @@ public class RoomServiceImpl implements RoomService {
             cardIds.addAll(newCards.stream().map(CardInfo::getCardId).toList());
         }
 
-        // CASE 3: Decrease capacity → remove last X
+        // CASE 3: Decrease capacity â†’ remove last X
         else if (diff < 0) {
             int remove = Math.min(cardPool.size(), Math.abs(diff));
 

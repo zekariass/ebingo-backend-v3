@@ -58,61 +58,30 @@ public class GameWebSocketHandler implements WebSocketHandler {
     public Mono<Void> handle(WebSocketSession session) {
 //        log.info("======================>>> New WS connection: {}", session.getId());
 
-        // 1️⃣ Extract query params
+        // 1ï¸âƒ£ Extract query params
         MultiValueMap<String, String> params = UriComponentsBuilder
                 .fromUri(session.getHandshakeInfo().getUri())
                 .build()
                 .getQueryParams();
 
-        // 2️⃣ Extract and decode initData
+        // 2ï¸âƒ£ Extract and decode initData
 //        String encodedInitData = params.getFirst("initData");
         Long agentId = params.getFirst("agentId") != null ? Long.valueOf(Objects.requireNonNull(params.getFirst("agentId"))) : null;
         String userId = params.getFirst("userId");
 //
 //        log.info("Decoded initData: {}", encodedInitData);
 
-//        if (encodedInitData == null || encodedInitData.isBlank()) {
-//            return sendErrorAndClose(session, "Missing initData query param");
-//        }
-//
-//        String initData;
-//        try {
-//            initData = URLDecoder.decode(encodedInitData, StandardCharsets.UTF_8);
-//        } catch (Exception e) {
-//            log.error("Failed to decode initData", e);
-//            return sendErrorAndClose(session, "Invalid initData format");
-//        }
 
 //        log.info("=======================>>> Decoded initData: {}", initData);
 
-        // 3️⃣ Verify Telegram initData
-//        Optional<Map<String, String>> verified = telegramAuthVerifier.verifyInitData(initData);
-//        if (verified.isEmpty()) {
-//            log.warn("Invalid Telegram initData signature");
-//            return sendErrorAndClose(session, "Invalid Telegram initData signature");
-//        }
 
 //        Map<String, String> data = verified.get();
 
-        // 4️⃣ Extract user info
-//        Map<String, Object> user;
-//        try {
-//            user = objectMapper.readValue(data.get("user"), Map.class);
-//        } catch (JsonProcessingException e) {
-//            log.error("Failed to parse user from initData", e);
-//            return sendErrorAndClose(session, "Malformed user data in initData");
-//        }
 
 //        log.info("============================>>>> User: {}", user);
 
-//        String userId = String.valueOf(user.get("id"));
-//        if (userId == null) {
-//            return sendErrorAndClose(session, "Missing user ID in initData");
-//        }
-//
-//        String username = (String) user.getOrDefault("username", "User:" + userId);
 
-        // 5️⃣ Extract roomId from query param
+        // 5ï¸âƒ£ Extract roomId from query param
         Long roomId = Optional.ofNullable(params.getFirst("roomId"))
                 .map(Long::valueOf)
                 .orElse(null);
@@ -121,7 +90,7 @@ public class GameWebSocketHandler implements WebSocketHandler {
             return sendErrorAndClose(session, "Missing roomId query param");
         }
 
-        // 6️⃣ Start the WebSocket session
+        // 6ï¸âƒ£ Start the WebSocket session
         return startSession(session, userId, roomId, agentId);
     }
 
@@ -167,17 +136,17 @@ public class GameWebSocketHandler implements WebSocketHandler {
         // Subscribe to channels
         // -------------------------------
 
-        // 1️⃣ Subscribe to the main room explicitly
+        // 1ï¸âƒ£ Subscribe to the main room explicitly
         Flux<ReactiveSubscription.Message<String, String>> mainRoomFlux =
                 listenerContainer.receive(ChannelTopic.of(RedisKeys.roomChannel(roomId)));
 
-//        // 2️⃣ Subscribe to all other active rooms, skipping the main room
+//        // 2ï¸âƒ£ Subscribe to all other active rooms, skipping the main room
 //        Flux<ReactiveSubscription.Message<String, String>> otherRoomsFlux =
 //                roomRegistry.getActiveRooms()
 //                        .filter(rid -> !rid.equals(roomId))
 //                        .flatMap(rid -> listenerContainer.receive(ChannelTopic.of(RedisKeys.roomChannel(rid))));
 
-        // 2️⃣ Subscribe to all other active rooms, skipping the main room
+        // 2ï¸âƒ£ Subscribe to all other active rooms, skipping the main room
         Flux<ReactiveSubscription.Message<String, String>> otherRoomsFlux =
                 roomRegistry.getActiveRooms()
                         .map(Map.Entry::getKey) // extract roomId
@@ -188,7 +157,7 @@ public class GameWebSocketHandler implements WebSocketHandler {
                                 )
                         );
 
-        // 3️⃣ Subscribe to the user-specific channel
+        // 3ï¸âƒ£ Subscribe to the user-specific channel
         Flux<ReactiveSubscription.Message<String, String>> userFlux =
                 listenerContainer.receive(ChannelTopic.of(RedisKeys.userChannel(userId)));
 
@@ -286,15 +255,6 @@ public class GameWebSocketHandler implements WebSocketHandler {
                                 }
                         ).then();
 
-//            case "card.cardSelectRequest":
-//                String cardId = (payload.get("cardId") != null) ? payload.get("cardId").toString() : null;
-//                Long gameIdEvent = (payload.get("gameId") != null) ? Long.valueOf(payload.get("gameId").toString()) : null;
-//                return cardSelectionService.claimCard(roomId, gameIdEvent, userId, cardId, 2).then();
-//
-//            case "card.cardReleaseRequest":
-//                String cardId2 = (payload.get("cardId") != null) ? payload.get("cardId").toString() : null;
-//                Long gameEventId2 = (payload.get("gameId") != null) ? Long.valueOf(payload.get("gameId").toString()) : null;
-//                return cardSelectionService.releaseCard(roomId, gameEventId2, userId, cardId2).then();
 
             case "game.playerJoinRequest":
                 Long gameEventId3 = (payload.get("gameId") != null) ? Long.valueOf(payload.get("gameId").toString()) : null;

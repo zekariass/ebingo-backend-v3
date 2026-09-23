@@ -135,7 +135,7 @@ public class GameService {
                             )).then();
                         }
 
-                        // 1️⃣ Claim all cards in parallel
+                        // 1ï¸âƒ£ Claim all cards in parallel
                         return Flux.fromIterable(selectedCardIds)
                                 .flatMap(cardId ->
                                         cardSelectionService.claimCard(roomId, gameId, userId, cardId, 2)
@@ -168,7 +168,7 @@ public class GameService {
                                                 .then();
                                     }
 
-                                    // 2️⃣ All claims succeeded → Process payment
+                                    // 2ï¸âƒ£ All claims succeeded â†’ Process payment
 //                                    log.info("All cards claimed successfully for user {} in game {}. Proceeding with payment...", userId, gameId);
                                     return paymentService.processPayment(Long.parseLong(userId), entryFee, gameId, agentId, participantType)
                                             .flatMap(paymentSuccess -> {
@@ -177,12 +177,6 @@ public class GameService {
 
                                                     return Flux.fromIterable(selectedCardIds)
                                                             .flatMap(cardId -> cardSelectionService.releaseCard(roomId, gameId, userId, cardId))
-//                                                        .then(paymentService.processRefund(Long.parseLong(userId), gameId)
-//                                                                .onErrorResume(err -> {
-//                                                                    log.error("Refund failed for user {}: {}", userId, err.getMessage(), err);
-//                                                                    return Mono.empty();
-//                                                                })
-//                                                        )
                                                             .then(setOps.remove(playersKey, userId))
                                                             .then(publisher.publishUserEvent(userId, Map.of(
                                                                     "type", "error",
@@ -194,11 +188,11 @@ public class GameService {
                                                                             "roomId", roomId
                                                                     )
                                                             )))
-                                                            .then(); // ✅ no Mono.error() here
+                                                            .then(); // âœ… no Mono.error() here
                                                 }
 
 
-                                                // ✅ Payment success → complete join
+                                                // âœ… Payment success â†’ complete join
                                                 paymentCompleted.set(true);
 //                                                log.info("Payment successful for user {} in game {}", userId, gameId);
 
@@ -225,7 +219,7 @@ public class GameService {
                                                                     .then());
                                                 }
 
-                                                // If payment not completed → release cards, remove user
+                                                // If payment not completed â†’ release cards, remove user
                                                 return Flux.fromIterable(selectedCardIds)
                                                         .flatMap(cardId -> cardSelectionService.releaseCard(roomId, gameId, userId, cardId))
                                                         .then(setOps.remove(playersKey, userId))
@@ -262,95 +256,8 @@ public class GameService {
     }
 
 
-//    private Mono<Void> afterSuccessfulJoin(Long roomId,
-//                                           Long gameId,
-//                                           String userId,
-//                                           Integer capacity,
-//                                           List<String> selectedCardIds, Long agentId) {
-//
-//        log.info("afterSuccessfulJoin: user {} joined game {}", userId, gameId);
-//
-//        return gameStateService.getGameState(roomId, agentId)
-//                .flatMap(state -> {
-//
-//                    Set<String> joinedPlayers = Optional.ofNullable(state.getJoinedPlayers()).orElse(Set.of());
-//                    int playersCount = joinedPlayers.size();
-//                    List<String> allSelectedCardIds = new ArrayList<>(state.getAllSelectedCardsIds());
-//
-//                    Long countdownDurationSeconds = Optional.ofNullable(state.getCountdownDurationSeconds()).orElse(-1L);
-//                    Instant countdownEndTime = state.getCountdownEndTime();
-//                    GameStatus status = state.getStatus();
-//
-//                    return broadcastPlayerJoin(
-//                            roomId, userId, joinedPlayers, playersCount, selectedCardIds,
-//                            allSelectedCardIds, countdownDurationSeconds, countdownEndTime, status, agentId
-//                    )
-//                            // Update leaderboards
-//                            .then(updateLeaderboardsOnJoin(Long.valueOf(userId), state.getEntryFee() * selectedCardIds.size(), agentId))
-//                            .then(startCountdownIfEligible(state, roomId, gameId, userId, capacity, playersCount, agentId));
-//                });
-//    }
 
 
-//    private Mono<Void> afterSuccessfulJoin(
-//            Long roomId,
-//            Long gameId,
-//            String userId,
-//            Integer capacity,
-//            List<String> selectedCardIds,
-//            Long agentId,
-//            Boolean isBot) {
-//        log.info("afterSuccessfulJoin: user {} joined game {}", userId, gameId);
-//
-//        final int cardsCount = selectedCardIds != null ? selectedCardIds.size() : 0;
-//
-//        if (cardsCount <= 0) {
-//            return Mono.error(new IllegalArgumentException("selectedCardIds must not be empty"));
-//        }
-//
-//        // 1) Get user from DB to determine bot/real
-//        return userProfileService.getUserProfileByTelegramIdAndAgentId(Long.parseLong(userId), agentId) // Mono<User>
-//                .switchIfEmpty(Mono.error(new IllegalArgumentException("User not found: " + userId)))
-//                .flatMap(users -> {
-//                    final boolean isBot = user.getIsBot(); // <-- adjust getter
-//                    final long botCardsDelta = isBot ? cardsCount : 0L;
-//                    final long realCardsDelta = isBot ? 0L : cardsCount;
-//
-//                    // 2) Update Redis metrics atomically (concurrency-safe)
-//                    return gameMetricsRedisService.addDeltas(
-//                                    gameId,
-//                                    botCardsDelta,
-//                                    realCardsDelta,
-//                                    java.math.BigDecimal.ZERO // realMoneyAmount not changed here
-//                            )
-//                            // 3) Continue your existing workflow
-//                            .then(gameStateService.getGameState(roomId, agentId))
-//                            .flatMap(state -> {
-//
-//                                Set<String> joinedPlayers = Optional.ofNullable(state.getJoinedPlayers()).orElse(Set.of());
-//                                int playersCount = joinedPlayers.size();
-//                                List<String> allSelectedCardIds = new ArrayList<>(state.getAllSelectedCardsIds());
-//
-//                                Long countdownDurationSeconds = Optional.ofNullable(state.getCountdownDurationSeconds()).orElse(-1L);
-//                                Instant countdownEndTime = state.getCountdownEndTime();
-//                                GameStatus status = state.getStatus();
-//
-//                                return broadcastPlayerJoin(
-//                                        roomId, userId, joinedPlayers, playersCount, selectedCardIds,
-//                                        allSelectedCardIds, countdownDurationSeconds, countdownEndTime, status, agentId
-//                                )
-//                                        // Update leaderboards
-//                                        .then(updateLeaderboardsOnJoin(
-//                                                Long.valueOf(userId),
-//                                                state.getEntryFee() * cardsCount,
-//                                                agentId
-//                                        ))
-//                                        .then(startCountdownIfEligible(
-//                                                state, roomId, gameId, userId, capacity, playersCount, agentId
-//                                        ));
-//                            });
-//                });
-//    }
 
     private Mono<Void> afterSuccessfulJoin(
             Long roomId,
@@ -368,7 +275,7 @@ public class GameService {
             return Mono.error(new IllegalArgumentException("selectedCardIds must not be empty"));
         }
 
-        // ✅ Use passed flag — no DB lookup
+        // âœ… Use passed flag â€” no DB lookup
         final long botCardsDelta = isBot ? cardsCount : 0L;
         final long realCardsDelta = isBot ? 0L : cardsCount;
 
@@ -497,7 +404,7 @@ public class GameService {
                             end
                             """, Long.class);
 
-                    // TTL in seconds — you can adjust this safely (e.g. 60)
+                    // TTL in seconds â€” you can adjust this safely (e.g. 60)
                     String lockTTL = "60";
 
                     return reactiveRedisTemplate.execute(acquireLockScript, List.of(countdownLockKey), "locked", lockTTL)
@@ -567,7 +474,7 @@ public class GameService {
                     }
 
                     if (gameStarted) {
-                        // Already started → personal acknowledgement only
+                        // Already started â†’ personal acknowledgement only
                         log.info("User {} tried to cancel, but game {} already started", userId, gameId);
                         return publisher.publishUserEvent(userId,
                                 Map.of(
@@ -584,7 +491,7 @@ public class GameService {
                     }
 
                     if (gameEnded) {
-                        // Game already ended → personal acknowledgement only
+                        // Game already ended â†’ personal acknowledgement only
                         log.info("User {} tried to cancel, but game {} already ended", userId, gameId);
                         return publisher.publishUserEvent(userId,
                                 Map.of(
@@ -601,7 +508,7 @@ public class GameService {
                     }
 
                     if (timeLeft <= 10 && timeLeft >= 0) {
-                        // Game is almost starting → personal acknowledgement only
+                        // Game is almost starting â†’ personal acknowledgement only
                         log.info("User {} tried to cancel, but game {} is almost starting", userId, gameId);
                         return publisher.publishUserEvent(userId,
                                 Map.of(
@@ -617,7 +524,7 @@ public class GameService {
                                 )).then();
                     }
 
-                    // Game not started → attempt SREM
+                    // Game not started â†’ attempt SREM
                     return setOps.remove(playersKey, userId)
                             .flatMap(removed -> {
                                 // Explicitly check if user was in the game
@@ -651,24 +558,6 @@ public class GameService {
                                             Set<String> players = updatedState.getJoinedPlayers();
                                             int playersCount = players.size();
 
-//                                            return playerCleanupService.removePlayerFromGame(roomId, gameId, userId)
-//                                                    .flatMap(cardIds -> {
-//                                                        return publisher.publishEvent(
-//                                                                RedisKeys.roomChannel(roomId),
-//                                                                Map.of(
-//                                                                        "type", "game.playerLeft",
-//                                                                        "payload", Map.of(
-//                                                                                "playerId", userId,
-//                                                                                "gameId", gameId,
-////                                                                                "gameState", updatedState,
-//                                                                                "joinedPlayers", players,
-//                                                                                "playersCount", playersCount,
-//                                                                                "releasedCardsIds", cardIds,
-//                                                                                "roomId", roomId
-//                                                                        )
-//                                                                )
-//                                                        );
-//                                                    });
 
                                             return playerCleanupService.removePlayerFromGame(roomId, gameId, userId)
                                                     .flatMap(cardIds -> {
@@ -929,154 +818,7 @@ public class GameService {
     }
 
 
-    // NEW WITH SELECTED CARD DRAWING LOGIC
-//    public Mono<Void> drawNumbersLoop(GameState state, String userId, Long agentId) {
-//        final Long roomId = state.getRoomId();
-//        final int maxDraws = 75;
-//        final String endLockKey = "game:end-lock:" + roomId;
-//
-//        Sinks.One<Void> stopSink = Sinks.one();
-//        stopLoopSinks.put(roomId, stopSink);
-//
-//        Mono<SystemConfigDto> configMono =
-//                systemConfigService.getSystemConfigByNameAndAgentId("DRAW_FROM_SELECTED_CARDS_ONLY", agentId);
-//
-//        Mono<RoomInternalDto> roomMono =
-//                roomService.getRoomWithCardPoolById(roomId);
-//
-//        // Randomly select one card ID from selected cards - ONLY ORIGINAL IDS LIST
 
-    /// /        List<String> selectedCardIds = new ArrayList<>(state.getAllSelectedCardsIds());
-    /// /        Collections.shuffle(selectedCardIds);
-    /// /        String randomSelectedCardId = selectedCardIds.get(0);
-//
-//
-//        // MAKE THE LIST AT LEAST 100 ITEMS
-//
-//        List<String> originalIds = new ArrayList<>(state.getAllSelectedCardsIds());
-//        Random random = new Random();
-//
-//        if (originalIds.isEmpty()) {
-//            throw new IllegalStateException("No cards selected!");
-//        }
-//
-//        // Shuffle original IDs first
-//        Collections.shuffle(originalIds, random);
-//
-//        // Create a new list starting with the shuffled original IDs
-//        List<String> selectedCardIds = new ArrayList<>(originalIds);
-//
-//        // Add random duplicates until the list has at least 100 IDs
-//        for (int i = selectedCardIds.size(); i < 100; i++) {
-//            selectedCardIds.add(originalIds.get(random.nextInt(originalIds.size())));
-//        }
-//
-//        // Shuffle the final list once to mix original + duplicates
-//        Collections.shuffle(selectedCardIds, random);
-//
-//        // Pick a random ID from the final list
-//        String randomSelectedCardId = selectedCardIds.get(random.nextInt(selectedCardIds.size()));
-//
-//
-//        Mono<List<Integer>> drawSequenceMono =
-//                configMono.flatMap(config -> {
-//                    boolean drawFromCardOnly =
-//                            config != null && "TRUE".equalsIgnoreCase(config.getValue());
-//
-//                    if (!drawFromCardOnly) {
-//                        // Normal 1–75 draw
-//                        log.info("NORMAL DRAW LOOP STARTED: FOR GAME {}", state.getGameId());
-//                        List<Integer> all = IntStream.rangeClosed(1, 75)
-//                                .boxed()
-//                                .collect(Collectors.toList());
-//                        Collections.shuffle(all);
-//                        return Mono.just(all);
-//                    }
-//
-//                    // DRAW_FROM_SELECTED_CARDS_ONLY = TRUE
-//                    return roomMono.map(room -> {
-//                        try {
-//                            ObjectMapper mapper = new ObjectMapper();
-//                            JsonNode root = mapper.readTree(room.getCardPoolJson());
-//
-//                            // Find the selected card
-//                            JsonNode selectedCard = StreamSupport.stream(root.spliterator(), false)
-//                                    .filter(node ->
-//                                            randomSelectedCardId.equals(node.get("cardId").asText()))
-//                                    .findFirst()
-//                                    .orElseThrow(() ->
-//                                            new IllegalStateException("Selected card not found in card pool"));
-//
-//                            log.info("SELECTED CARD DRAW LOOP STARTED: FOR GAME {} AND CARD {}", state.getGameId(), selectedCard);
-//
-//                            // Extract 24 numbers (exclude center free = 0)
-//                            Set<Integer> cardNumbers = new HashSet<>();
-//                            JsonNode numbersNode = selectedCard.get("numbers");
-//
-//                            for (String col : List.of("B", "I", "N", "G", "O")) {
-//                                for (JsonNode n : numbersNode.get(col)) {
-//                                    int value = n.asInt();
-//                                    if (value != 0) {
-//                                        cardNumbers.add(value);
-//                                    }
-//                                }
-//                            }
-//
-//                            if (cardNumbers.size() != 24) {
-//                                throw new IllegalStateException("Invalid card numbers count: " + cardNumbers.size());
-//                            }
-//
-//                            // Shuffle card numbers first
-//                            List<Integer> primary = new ArrayList<>(cardNumbers);
-//                            Collections.shuffle(primary);
-//
-//                            // Remaining numbers from 1–75 not in card
-//                            List<Integer> remaining = IntStream.rangeClosed(1, 75)
-//                                    .filter(n -> !cardNumbers.contains(n))
-//                                    .boxed()
-//                                    .collect(Collectors.toList());
-//                            Collections.shuffle(remaining);
-//
-//                            // Final draw order
-//                            List<Integer> finalSequence = new ArrayList<>(75);
-//                            finalSequence.addAll(primary);
-//                            finalSequence.addAll(remaining);
-//
-//                            log.info(
-//                                    "Room {} drawing from selected card {} (24 numbers first)",
-//                                    roomId,
-//                                    randomSelectedCardId
-//                            );
-//
-//                            return finalSequence;
-//
-//                        } catch (Exception e) {
-//                            throw new RuntimeException("Failed to prepare draw sequence", e);
-//                        }
-//                    });
-//                });
-//
-//        return drawSequenceMono.flatMapMany(drawSequence ->
-//                        Flux.fromIterable(drawSequence)
-//                                .delayElements(Duration.ofSeconds(drawInterval))
-//                                .flatMap(number ->
-//                                        gameStateService.getGameState(roomId, agentId)
-//                                                .flatMap(latestState -> {
-//                                                    if (latestState.isEnded()
-//                                                            || latestState.getStopNumberDrawing()
-//                                                            || latestState.getDrawnNumbers().contains(number)) {
-//                                                        stopSink.tryEmitEmpty();
-//                                                        return Mono.empty();
-//                                                    }
-//                                                    return drawSingleNumber(latestState, number, agentId);
-//                                                })
-//                                )
-//                                .takeUntilOther(stopSink.asMono())
-//                )
-//                .then(Mono.defer(() ->
-//                        handleNoWinnerEnd(roomId, userId, endLockKey, agentId)))
-//                .doFinally(signal -> stopLoopSinks.remove(roomId));
-//    }
     public Mono<Void> drawNumbersLoop(GameState state, String userId, Long agentId) {
         final Long roomId = state.getRoomId();
         final long gameId = state.getGameId();
@@ -1110,14 +852,14 @@ public class GameService {
                 drawFromSelectedConfigMono.flatMap(drawFromSelectedCfg -> {
                     boolean drawFromSelectedOnly = isTrue(drawFromSelectedCfg);
 
-                    // ✅ Requirement 1:
+                    // âœ… Requirement 1:
                     // If DRAW_FROM_SELECTED_CARDS_ONLY is FALSE -> ignore other configs and do normal draw
                     if (!drawFromSelectedOnly) {
                         log.info("NORMAL DRAW LOOP STARTED: FOR GAME {}", gameId);
                         return Mono.just(generateNormal75Draw(random));
                     }
 
-                    // ✅ Requirement 2: DRAW_FROM_SELECTED_CARDS_ONLY is TRUE
+                    // âœ… Requirement 2: DRAW_FROM_SELECTED_CARDS_ONLY is TRUE
                     return Mono.zip(
                                     realUserOnlyPlay75ConfigMono.defaultIfEmpty(new SystemConfigDto()),
                                     selectedCardsMultiplierMono.defaultIfEmpty(new SystemConfigDto())
@@ -1183,7 +925,7 @@ public class GameService {
                                                     List<Integer> primary = new ArrayList<>(cardNumbers);
                                                     Collections.shuffle(primary, random);
 
-                                                    // Remaining 1–75 not in card
+                                                    // Remaining 1â€“75 not in card
                                                     List<Integer> remaining = IntStream.rangeClosed(1, drawIteration)
                                                             .filter(n -> !cardNumbers.contains(n))
                                                             .boxed()
