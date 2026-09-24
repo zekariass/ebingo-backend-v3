@@ -31,22 +31,24 @@ public class TotalAccountingServiceImpl implements TotalAccountingService {
 
     @Override
     public Mono<PageResponse<TotalAccountingDto>> getAll(int page, int size, String sortBy) {
-        long offset = (long) page * size;
-        
+        int safePage = Math.max(0, page);
+        int safeSize = Math.max(1, size);
+        long offset = (long) safePage * safeSize;
+
         return repository.countAll()
                 .flatMap(totalElements -> {
                     var dataFlux = switch (sortBy != null ? sortBy.toLowerCase() : "id") {
-                        case "netincome" -> repository.findAllPagedSortedByNetIncome(size, offset);
-                        case "lastsettledat" -> repository.findAllPagedSortedByLastSettledAt(size, offset);
-                        case "createdat" -> repository.findAllPagedSortedByCreatedAt(size, offset);
-                        case "updatedat" -> repository.findAllPagedSortedByUpdatedAt(size, offset);
-                        default -> repository.findAllPaged(size, offset);
+                        case "netincome" -> repository.findAllPagedSortedByNetIncome(safeSize, offset);
+                        case "lastsettledat" -> repository.findAllPagedSortedByLastSettledAt(safeSize, offset);
+                        case "createdat" -> repository.findAllPagedSortedByCreatedAt(safeSize, offset);
+                        case "updatedat" -> repository.findAllPagedSortedByUpdatedAt(safeSize, offset);
+                        default -> repository.findAllPaged(safeSize, offset);
                     };
-                    
+
                     return dataFlux
                             .map(TotalAccountingMapper::toDto)
                             .collectList()
-                            .map(content -> new PageResponse<>(content, page, size, totalElements));
+                            .map(content -> new PageResponse<>(content, safePage, safeSize, totalElements));
                 })
                 .doOnSubscribe(s -> log.info("Fetching all total accounting records, page: {}, size: {}, sortBy: {}", page, size, sortBy))
                 .doOnSuccess(response -> log.info("Fetched {} total accounting records", response.getContent().size()))

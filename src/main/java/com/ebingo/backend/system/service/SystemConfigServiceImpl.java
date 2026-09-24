@@ -33,7 +33,7 @@ public class SystemConfigServiceImpl implements SystemConfigService {
     @Override
     public Mono<SystemConfigDto> getSystemConfigByNameAndAgentId(String name, Long agentId) {
 
-        String systemConfigKey = CacheKeyUtil.getSystemConfigByNameKey(name);
+        String systemConfigKey = CacheKeyUtil.getSystemConfigByNameKey(name, agentId);
 
         Mono<SystemConfigDto> systemConfig = systemConfigRepository.findByNameAndAgentId(name, agentId)
                 .switchIfEmpty(Mono.error(new ResourceNotFoundException("SYSTEM_CONFIG_NOT_FOUND")))
@@ -99,7 +99,7 @@ public class SystemConfigServiceImpl implements SystemConfigService {
                     // Evict caches AFTER successful save
                     String allConfigsKey = CacheKeyUtil.getSystemConfigsByAgentKey(updated.getAgentId());
                     String configByNameKey =
-                            CacheKeyUtil.getSystemConfigByNameKey(updated.getName());
+                            CacheKeyUtil.getSystemConfigByNameKey(updated.getName(), updated.getAgentId());
 
                     return cacheService.evict(allConfigsKey)
                             .then(cacheService.evict(configByNameKey))

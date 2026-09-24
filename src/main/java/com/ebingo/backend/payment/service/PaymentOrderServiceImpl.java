@@ -1055,9 +1055,12 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
     @Override
     public Mono<PageResponse<PaymentOrderListDto>> getPaymentOrdersForAdmin(PaymentOrderGetParamsDto params) {
 
-        int page = params.getPage();
+        int page = Math.max(1, params.getPage());
         int size = params.getSize();
         int offset = (page - 1) * size;
+
+        log.info("getPaymentOrdersForAdmin params: agentId={}, status={}, txnType={}, phoneNumber={}, page={}, size={}",
+                params.getAgentId(), params.getStatus(), params.getTxnType(), params.getPhoneNumber(), page, size);
 
         Flux<PaymentOrder> ordersFlux;
         Mono<Long> countMono;
@@ -1104,6 +1107,8 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
                 .map(PaymentOrderMapper::toListDto)
                 .collectList()
                 .zipWith(countMono)
+                .doOnNext(tuple -> log.info("getPaymentOrdersForAdmin result: fetched={} totalCount={}",
+                        tuple.getT1().size(), tuple.getT2()))
                 .map(tuple -> new PageResponse<>(
                         tuple.getT1(),
                         page,

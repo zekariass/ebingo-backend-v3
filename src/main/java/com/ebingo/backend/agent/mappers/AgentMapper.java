@@ -23,6 +23,7 @@ public final class AgentMapper {
                 .botUsername(agent.getBotUsername())
                 .contactAddress(agent.getContactAddress())
                 .contactName(agent.getContactName())
+                .themeKey(agent.getThemeKey())
                 .createdAt(agent.getCreatedAt())
                 .updatedAt(agent.getUpdatedAt())
                 .build();
@@ -46,6 +47,7 @@ public final class AgentMapper {
         entity.setBotUsername(agentDto.getBotUsername());
         entity.setContactAddress(agentDto.getContactAddress());
         entity.setContactName(agentDto.getContactName());
+        entity.setThemeKey(agentDto.getThemeKey());
         entity.setCreatedAt(agentDto.getCreatedAt());
         entity.setUpdatedAt(agentDto.getUpdatedAt());
         return entity;
@@ -83,7 +85,11 @@ public final class AgentMapper {
         if (agentUpdateDto.getContactAddress() != null) {
             existingAgent.setContactAddress(agentUpdateDto.getContactAddress());
         }
-        
+        // Presence-tracked: absent = untouched, explicit null = reset to default palette
+        if (agentUpdateDto.isThemeKeyPresent()) {
+            existingAgent.setThemeKey(agentUpdateDto.getThemeKey());
+        }
+
         return existingAgent;
     }
 }

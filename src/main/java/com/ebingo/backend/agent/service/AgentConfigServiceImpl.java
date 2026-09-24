@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Mono;
 
 import java.util.Map;
@@ -24,19 +25,16 @@ public class AgentConfigServiceImpl implements AgentConfigService {
     private final AgentConfigRepository agentConfigRepository;
     private final AgentRepository agentRepository;
     private final ObjectMapper objectMapper;
+    private final TransactionalOperator transactionalOperator;
 
     @Override
     public Mono<AgentConfigDto> getConfig(Long agentId) {
-        return agentRepository.existsById(agentId)
-                .flatMap(exists -> {
-                    if (!exists) {
-                        return Mono.error(new ResourceNotFoundException("Agent not found with ID: " + agentId));
-                    }
-                    return agentConfigRepository.findById(agentId)
-                            .switchIfEmpty(Mono.error(new ResourceNotFoundException(
-                                    "Agent config not found for agent ID: " + agentId)))
-                            .map(this::toDto);
-                })
+        return agentRepository.findById(agentId)
+                .switchIfEmpty(Mono.error(new ResourceNotFoundException("Agent not found with ID: " + agentId)))
+                .flatMap(agent -> agentConfigRepository.findById(agentId)
+                        .switchIfEmpty(Mono.error(new ResourceNotFoundException(
+                                "Agent config not found for agent ID: " + agentId)))
+                        .map(config -> toDto(config, agent.getThemeKey())))
                 .doOnSubscribe(s -> log.debug("Fetching bot config for agent ID: {}", agentId))
                 .doOnError(e -> log.warn("Failed to fetch bot config for agent ID {}: {}", agentId, e.getMessage()));
     }
@@ -57,9 +55,12 @@ public class AgentConfigServiceImpl implements AgentConfigService {
                                     dto.getSupportUsername(),
                                     dto.getSupportChannel(),
                                     toJsonString(dto.getBankDetails()))
+                            // themeKey lives on the agents table; null resets to the client default palette
+                            .then(agentRepository.updateThemeKey(agentId, dto.getThemeKey()))
                             .then(agentConfigRepository.findById(agentId))
-                            .map(this::toDto);
+                            .map(config -> toDto(config, dto.getThemeKey()));
                 })
+                .as(transactionalOperator::transactional)
                 .doOnSubscribe(s -> log.info("Upserting bot config for agent ID: {}", agentId))
                 .doOnSuccess(cfg -> log.info("Upserted bot config for agent ID: {}", agentId))
                 .doOnError(e -> log.error("Failed to upsert bot config for agent ID: {}", agentId, e));
@@ -73,7 +74,7 @@ public class AgentConfigServiceImpl implements AgentConfigService {
                 .doOnError(e -> log.error("Failed to create empty bot config for agent ID: {}", agentId, e));
     }
 
-    private AgentConfigDto toDto(AgentConfig entity) {
+    private AgentConfigDto toDto(AgentConfig entity, String themeKey) {
         return AgentConfigDto.builder()
                 .agentId(entity.getAgentId())
                 .name(entity.getBrandName())
@@ -83,6 +84,7 @@ public class AgentConfigServiceImpl implements AgentConfigService {
                 .supportUsername(entity.getSupportUsername())
                 .supportChannel(entity.getSupportChannel())
                 .bankDetails(toMap(entity.getBankDetails()))
+                .themeKey(themeKey)
                 .build();
     }
 

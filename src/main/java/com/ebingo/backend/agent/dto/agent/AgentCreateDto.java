@@ -1,6 +1,7 @@
 package com.ebingo.backend.agent.dto.agent;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -37,4 +38,8 @@ public class AgentCreateDto {
     private String botToken;
     private String botUsername;
     private String contactAddress;
+
+    /** Optional UI theme palette key; null/absent = client "default" palette. */
+    @Size(max = 64, message = "themeKey must be at most 64 characters")
+    private String themeKey;
 }

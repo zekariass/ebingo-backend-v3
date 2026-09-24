@@ -39,14 +39,16 @@ public class DailyAccountingServiceImpl implements DailyAccountingService {
 
     @Override
     public Mono<PageResponse<DailyAccountingDto>> getByAgentId(Long agentId, int page, int size) {
-        long offset = (long) page * size;
+        int safePage = Math.max(0, page);
+        int safeSize = Math.max(1, size);
+        long offset = (long) safePage * safeSize;
 
         return repository.countByAgentId(agentId)
                 .flatMap(totalElements ->
-                        repository.findByAgentIdPaged(agentId, size, offset)
+                        repository.findByAgentIdPaged(agentId, safeSize, offset)
                                 .map(DailyAccountingMapper::toDto)
                                 .collectList()
-                                .map(content -> new PageResponse<>(content, page, size, totalElements))
+                                .map(content -> new PageResponse<>(content, safePage, safeSize, totalElements))
                 )
                 .doOnSubscribe(s -> log.info("Fetching daily accounting for agent: {}, page: {}, size: {}", agentId, page, size))
                 .doOnSuccess(response -> log.info("Fetched {} daily accounting records for agent: {}", response.getContent().size(), agentId))
@@ -76,7 +78,9 @@ public class DailyAccountingServiceImpl implements DailyAccountingService {
             return Mono.error(new BadRequestException("Start date cannot be after end date"));
         }
 
-        long offset = (long) page * size;
+        int safePage = Math.max(0, page);
+        int safeSize = Math.max(1, size);
+        long offset = (long) safePage * safeSize;
 
         // Use the DB's current date so validation matches the timezone used
         // for accounting_date in the upserts
@@ -92,10 +96,10 @@ public class DailyAccountingServiceImpl implements DailyAccountingService {
                 })
                 .flatMap(today -> repository.countByAgentIdAndDateRange(agentId, startDate, endDate))
                 .flatMap(totalElements ->
-                        repository.findByAgentIdAndDateRangePaged(agentId, startDate, endDate, size, offset)
+                        repository.findByAgentIdAndDateRangePaged(agentId, startDate, endDate, safeSize, offset)
                                 .map(DailyAccountingMapper::toDto)
                                 .collectList()
-                                .map(content -> new PageResponse<>(content, page, size, totalElements))
+                                .map(content -> new PageResponse<>(content, safePage, safeSize, totalElements))
                 )
                 .doOnSubscribe(s -> log.info(
                         "Fetching daily accounting for agent: {} from {} to {}, page: {}, size: {}",
@@ -109,14 +113,16 @@ public class DailyAccountingServiceImpl implements DailyAccountingService {
 
     @Override
     public Mono<PageResponse<DailyAccountingDto>> getTodayRecordsForAllAgents(int page, int size) {
-        long offset = (long) page * size;
+        int safePage = Math.max(0, page);
+        int safeSize = Math.max(1, size);
+        long offset = (long) safePage * safeSize;
 
         return repository.countToday()
                 .flatMap(totalElements ->
-                        repository.findTodayPaged(size, offset)
+                        repository.findTodayPaged(safeSize, offset)
                                 .map(DailyAccountingMapper::toDto)
                                 .collectList()
-                                .map(content -> new PageResponse<>(content, page, size, totalElements))
+                                .map(content -> new PageResponse<>(content, safePage, safeSize, totalElements))
                 )
                 .doOnSubscribe(s -> log.info(
                         "Fetching today's daily accounting records for all agents, page: {}, size: {}", page, size))

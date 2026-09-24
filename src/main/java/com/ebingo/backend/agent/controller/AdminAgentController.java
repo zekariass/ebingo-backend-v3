@@ -5,11 +5,13 @@ import com.ebingo.backend.agent.dto.agent.AgentConfigUpdateDto;
 import com.ebingo.backend.agent.dto.agent.AgentCreateDto;
 import com.ebingo.backend.agent.dto.agent.AgentDepositConfigDto;
 import com.ebingo.backend.agent.dto.agent.AgentDto;
+import com.ebingo.backend.agent.dto.agent.AgentUpdateDto;
 import com.ebingo.backend.agent.service.AgentConfigService;
 import com.ebingo.backend.agent.service.AgentDepositConfigService;
 import com.ebingo.backend.agent.service.AgentService;
 import com.ebingo.backend.common.annotation.RequireAccessToken;
 import com.ebingo.backend.common.dto.ApiResponse;
+import com.ebingo.backend.common.dto.PageResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -54,6 +56,48 @@ public class AdminAgentController {
                         .build()
                 )
                 .map(agent -> ResponseEntity.status(HttpStatus.CREATED).body(agent));
+    }
+
+    @GetMapping
+    @Operation(summary = "List agents", description = "Get all agents with pagination; each item includes themeKey for the admin palette badge")
+    public Mono<ResponseEntity<ApiResponse<PageResponse<AgentDto>>>> getAllAgents(
+            @Parameter(description = "Page number (0-indexed)") @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "Page size") @RequestParam(defaultValue = "10") int size,
+            @Parameter(description = "Sort by field: id, name, createdAt")
+            @RequestParam(required = false, defaultValue = "id") String sortBy,
+            ServerWebExchange exchange
+    ) {
+        return agentService.getAllAgents(page, size, sortBy)
+                .map(pageResponse -> ApiResponse.<PageResponse<AgentDto>>builder()
+                        .statusCode(HttpStatus.OK.value())
+                        .success(true)
+                        .message("Agents retrieved successfully")
+                        .path(exchange.getRequest().getPath().value())
+                        .timestamp(Instant.now())
+                        .data(pageResponse)
+                        .build()
+                )
+                .map(ResponseEntity::ok);
+    }
+
+    @PutMapping("/{agentId}")
+    @Operation(summary = "Update agent", description = "Partial update of an agent; absent/null fields leave existing values unchanged, except themeKey where explicit null resets to the default palette")
+    public Mono<ResponseEntity<ApiResponse<AgentDto>>> updateAgent(
+            @Parameter(required = true, description = "Agent ID") @PathVariable Long agentId,
+            @Valid @RequestBody AgentUpdateDto dto,
+            ServerWebExchange exchange
+    ) {
+        return agentService.updateAgentById(agentId, dto)
+                .map(agent -> ApiResponse.<AgentDto>builder()
+                        .statusCode(HttpStatus.OK.value())
+                        .success(true)
+                        .message("Agent updated successfully")
+                        .path(exchange.getRequest().getPath().value())
+                        .timestamp(Instant.now())
+                        .data(agent)
+                        .build()
+                )
+                .map(ResponseEntity::ok);
     }
 
     @GetMapping("/{agentId}/config")

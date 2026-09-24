@@ -1,5 +1,6 @@
 package com.ebingo.backend.agent.dto.agent;
 
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -37,4 +38,8 @@ public class AgentConfigUpdateDto {
 
     /** Free-form map keyed by payment method. */
     private Map<String, Object> bankDetails;
+
+    /** UI theme palette key; null resets the agent to the client "default" palette. */
+    @Size(max = 64, message = "themeKey must be at most 64 characters")
+    private String themeKey;
 }

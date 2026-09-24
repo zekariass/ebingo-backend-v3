@@ -33,8 +33,8 @@ public class CacheKeyUtil {
         return "rooms:with-card-pool:agent:" + agentId + ":all";
     }
 
-    public static String getSystemConfigByNameKey(String configName) {
-        return "system:config:" + configName;
+    public static String getSystemConfigByNameKey(String configName, Long agentId) {
+        return "system:config:" + configName + ":agent:" + agentId;
     }
 
     public static String getSystemConfigsByAgentKey(Long agentId) {

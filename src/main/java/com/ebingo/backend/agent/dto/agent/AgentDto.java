@@ -25,6 +25,7 @@ public class AgentDto {
     private String botToken;
     private String botUsername;
     private String contactAddress;
+    private String themeKey;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

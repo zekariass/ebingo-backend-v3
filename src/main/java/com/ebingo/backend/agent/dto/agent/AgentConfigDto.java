@@ -40,4 +40,7 @@ public class AgentConfigDto {
 
     /** Free-form map keyed by payment method (e.g. telebirr, cbeonline). */
     private Map<String, Object> bankDetails;
+
+    /** UI theme palette key stored on the agent; null = client "default" palette. */
+    private String themeKey;
 }

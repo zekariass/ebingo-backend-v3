@@ -1,6 +1,7 @@
 package com.ebingo.backend.agent.repository;
 
 import com.ebingo.backend.agent.entity.Agent;
+import org.springframework.data.r2dbc.repository.Modifying;
 import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.repository.reactive.ReactiveCrudRepository;
 import reactor.core.publisher.Flux;
@@ -36,4 +37,8 @@ public interface AgentRepository extends ReactiveCrudRepository<Agent, Long> {
             "LOWER(phone_number) LIKE LOWER(CONCAT('%', :searchTerm, '%')) OR " +
             "LOWER(code) LIKE LOWER(CONCAT('%', :searchTerm, '%'))")
     Flux<Agent> searchAgents(String searchTerm);
+
+    @Modifying
+    @Query("UPDATE agents SET theme_key = :themeKey, updated_at = CURRENT_TIMESTAMP WHERE id = :agentId")
+    Mono<Void> updateThemeKey(Long agentId, String themeKey);
 }

@@ -63,6 +63,7 @@ public class AgentServiceImpl implements AgentService {
         agent.setBotToken(dto.getBotToken());
         agent.setBotUsername(dto.getBotUsername());
         agent.setContactAddress(dto.getContactAddress());
+        agent.setThemeKey(dto.getThemeKey());
         agent.setCreatedAt(now);
         agent.setUpdatedAt(now);
 

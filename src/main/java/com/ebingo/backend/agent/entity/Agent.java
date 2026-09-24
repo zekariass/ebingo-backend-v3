@@ -49,6 +49,9 @@ public class Agent {
     @Column("contact_address")
     private String contactAddress;
 
+    @Column("theme_key")
+    private String themeKey;
+
     @Column("created_at")
     private LocalDateTime createdAt;
 
