@@ -43,4 +43,7 @@ public class AgentConfigDto {
 
     /** UI theme palette key stored on the agent; null = client "default" palette. */
     private String themeKey;
+
+    /** When true, clients hide player display names for this agent. */
+    private Boolean hideName;
 }

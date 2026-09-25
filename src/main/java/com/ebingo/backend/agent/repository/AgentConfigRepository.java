@@ -16,10 +16,11 @@ public interface AgentConfigRepository extends ReactiveCrudRepository<AgentConfi
     @Query("""
             INSERT INTO agent_config (agent_id, brand_name, admin_ids, logo_name,
                                       support_contact, support_username, support_channel,
-                                      bank_details, created_at, updated_at)
+                                      bank_details, hide_name, created_at, updated_at)
             VALUES (:agentId, :brandName, :adminIds, :logoName,
                     :supportContact, :supportUsername, :supportChannel,
-                    CAST(:bankDetails AS jsonb), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    CAST(:bankDetails AS jsonb), COALESCE(:hideName, FALSE),
+                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ON CONFLICT (agent_id) DO UPDATE SET
                 brand_name = EXCLUDED.brand_name,
                 admin_ids = EXCLUDED.admin_ids,
@@ -28,6 +29,7 @@ public interface AgentConfigRepository extends ReactiveCrudRepository<AgentConfi
                 support_username = EXCLUDED.support_username,
                 support_channel = EXCLUDED.support_channel,
                 bank_details = EXCLUDED.bank_details,
+                hide_name = EXCLUDED.hide_name,
                 updated_at = CURRENT_TIMESTAMP
             """)
     Mono<Void> upsert(Long agentId,
@@ -37,5 +39,6 @@ public interface AgentConfigRepository extends ReactiveCrudRepository<AgentConfi
                       String supportContact,
                       String supportUsername,
                       String supportChannel,
-                      String bankDetails);
+                      String bankDetails,
+                      Boolean hideName);
 }

@@ -47,6 +47,10 @@ public class AgentConfig {
     @Column("bank_details")
     private String bankDetails;
 
+    /** When true, clients hide player display names for this agent. */
+    @Column("hide_name")
+    private Boolean hideName;
+
     @Column("created_at")
     private LocalDateTime createdAt;
 

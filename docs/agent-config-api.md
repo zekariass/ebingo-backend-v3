@@ -73,7 +73,9 @@ Field names are **contractual** — consume them exactly as returned.
     "bankDetails": {
       "telebirr":  { "recieverName": "bezawite tadele zenebe", "phoneNumber": "251902493104" },
       "cbeonline": { "accountName": "Bezawit Tadele Zenebe", "accountNumber": "1000210696354" }
-    }
+    },
+    "themeKey": null,
+    "hideName": false
   },
   "timestamp": "2026-09-22T09:00:00Z"
 }
@@ -106,6 +108,8 @@ Field names are **contractual** — consume them exactly as returned.
 | `supportUsername` | string \| null | Telegram username, **no `@`** |
 | `supportChannel` | string \| null | Telegram channel/group handle, **no `@`** |
 | `bankDetails` | object \| null | **Free-form map keyed by payment method** — do not assume a fixed schema; new methods can appear |
+| `themeKey` | string \| null | UI theme palette key; `null` = client "default" palette |
+| `hideName` | boolean | When `true`, hide player display names for this agent |
 
 `bankDetails` per-method shape is defined by the client contract, e.g.:
 
@@ -171,7 +175,9 @@ provided values. `404` if the agent doesn't exist.
   "bankDetails": {
     "telebirr":  { "recieverName": "bezawite tadele zenebe", "phoneNumber": "251902493104" },
     "cbeonline": { "accountName": "Bezawit Tadele Zenebe", "accountNumber": "1000210696354" }
-  }
+  },
+  "themeKey": null,
+  "hideName": false
 }
 ```
 

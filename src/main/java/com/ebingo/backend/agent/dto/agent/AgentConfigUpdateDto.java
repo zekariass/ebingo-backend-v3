@@ -42,4 +42,7 @@ public class AgentConfigUpdateDto {
     /** UI theme palette key; null resets the agent to the client "default" palette. */
     @Size(max = 64, message = "themeKey must be at most 64 characters")
     private String themeKey;
+
+    /** When true, clients hide player display names for this agent; null stores false. */
+    private Boolean hideName;
 }

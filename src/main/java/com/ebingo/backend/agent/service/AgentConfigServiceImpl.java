@@ -54,7 +54,8 @@ public class AgentConfigServiceImpl implements AgentConfigService {
                                     dto.getSupportContact(),
                                     dto.getSupportUsername(),
                                     dto.getSupportChannel(),
-                                    toJsonString(dto.getBankDetails()))
+                                    toJsonString(dto.getBankDetails()),
+                                    dto.getHideName())
                             // themeKey lives on the agents table; null resets to the client default palette
                             .then(agentRepository.updateThemeKey(agentId, dto.getThemeKey()))
                             .then(agentConfigRepository.findById(agentId))
@@ -68,7 +69,7 @@ public class AgentConfigServiceImpl implements AgentConfigService {
 
     @Override
     public Mono<Void> createEmptyConfig(Long agentId) {
-        return agentConfigRepository.upsert(agentId, null, null, null, null, null, null, null)
+        return agentConfigRepository.upsert(agentId, null, null, null, null, null, null, null, null)
                 .doOnSubscribe(s -> log.info("Creating empty bot config for agent ID: {}", agentId))
                 .doOnSuccess(v -> log.info("Created empty bot config for agent ID: {}", agentId))
                 .doOnError(e -> log.error("Failed to create empty bot config for agent ID: {}", agentId, e));
@@ -85,6 +86,7 @@ public class AgentConfigServiceImpl implements AgentConfigService {
                 .supportChannel(entity.getSupportChannel())
                 .bankDetails(toMap(entity.getBankDetails()))
                 .themeKey(themeKey)
+                .hideName(Boolean.TRUE.equals(entity.getHideName()))
                 .build();
     }
 
